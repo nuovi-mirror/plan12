@@ -1,0 +1,63 @@
+Plan 12 General Documentation
+
+Plan 12 Developer Port Guide
+Documentation version 1.1
+
+
+Plan12 is a very open operating system. We like a lot of variety in our systems. The guidelines for what plan12
+is defined as is well... not very strict. 
+
+This article will discuss how to become a maintainer of a plan12 port and what all of that entales.
+
+
+
+A maintainer is someone who manages, creates, and develops a port of plan12 to another architecture, 
+microarchitecture, or philisophical standpoint. 
+Plan12 simply has to fall under a few basic requirements to be officially published.
+
+1. it must fall under the definition established in pre-2.4
+2. it must maintain a small set of utilities with the same syntax
+
+Once all of these are met, the plan12 port the reader is developing will be published officially.
+
+Plan12 is defined as "A plan12 system is defined as a system that manages process spawning, killing, communication, data storage, and
+permissions via filesystem abstractions in a numeric hiearchy - processes are designed to be first-class above
+all else, turning all syscalls and process management into simple I/O operations."
+
+This is the definition of plan12. Any system that can be described in this way IS plan12.
+
+
+There are four major utilities to a plan12 system
+All plan12 systems must ship with these utilities in the default installation or bootstrap tutorial.
+
+EDIT - editor utility
+Syntax - EDIT {LINE|HEX} {(item)}
+
+Arg1 item HEX edits the selected item as a hexadecimal file.
+Arg1 item LINE edits the selected item as an ASCII encoded file.
+
+Arg2 is the path of the item to edit - since everything in plan12 is simply a file, this means EDIT can be
+used to edit more than just text or files - it can also be used to write data to disks, perform process operations, 
+and a lot more.
+
+This is a very versatile utility, by design.
+
+
+MOVE - item copy and deletion tool
+Syntax - MOVE {(item)|REMOVE} (item)
+
+Arg1 REMOVE removes the item at Arg2
+Arg1 (item) copies the contents of Arg1 to Arg2
+
+Arg2 being the item to enact on
+
+This item is used to copy, move, and delete items and files in a plan12 system.
+
+
+ASSEMBLE - basic assembler and linker binary
+Syntax - ASSEMBLE (item)
+
+Arg1 is the source code to assemble into an executable binary. The item after being assembled is 
+named to assemble.out at the same path as the binary assembled. 
+
+

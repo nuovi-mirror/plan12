@@ -1,0 +1,27 @@
+#!/bin/rc
+
+## take stdin as asm source and expand it based on the smsl file at
+## arg1 and output to stdout as asm source code.
+
+for(i in `{cat /fd/1}) {
+	if(~ $i *#DEFINE*) { ## define code
+		## handle this
+	}
+
+		if(~ $i *&ENDSEC*) { ## end code
+		## handle this
+	}
+
+	if(~ $i *'*'*) { ## call variable
+		## handle this
+	}
+
+	if(~ $i *!*,*) { ## define variable
+		## handle this
+	}
+
+	if(~ $i *@CALL*) { ## call code
+		## handle this
+	}
+}
+

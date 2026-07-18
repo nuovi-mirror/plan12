@@ -1,0 +1,1219 @@
+( docs )                                                               											          ( docs )
+
+Vans Plan 12 Documentation
+Variation Version 6
+
+
+Vans Plan 12
+	Vans Plan 12, also known as vp12, is the reference implementation for the Plan 12
+	architecture of operating systems. vp12 is fully compatible will all standard
+	Plan 12 tools and follows the architecture. This places it under the 'compliant'
+	class (formally known as Class 1) defined by the Plan 12 specifcation, version 2.  
+
+	vp12 is a fully kernel-less and
+	scheduler-less operating system based on assembly programming using a small set of
+	inline expanded macros for file-based IPC interfaces. This IPC interface is unified
+	to represent all operations of the operating system, including hardware management,
+	pseudo-scheduling, system boot-keeping, and (obviously) IPC. vp12 implements simple
+	core isolation and native, real hardware multithredding using filesystems holding
+	said IPC. Each filesystem is bound to one execution unit and all processes held in
+	that filesystem run on that execution unit. 
+
+	vp12 is designed to be incredibly small and simple, providing a fully unified 
+	file-based IPC interface. vp12 pushes the idea that, if the OS is simple and
+	unified, then application code will no longer be spaghetti-like and messy as the
+	system default. Essentially, moving all system complexity into a unified protocol
+	interface, allowing applications to not need to have mounds of edge handling.
+
+	vp12, just as Plan 12, is a research system designed to explore a fully unified
+	kernel-less and scheduler-less operating system architecture. This system is not
+	intended to be used in production (although it would not be too bad at it) and
+	is intended to be studied.
+
+Filesystems
+	One of the major optimizations of this operating system is that all logical
+	blocks are padded to the exact size of one cache line. This decreases the
+	maximum number of cycles one operation may take by a lot.
+	The marker 'realsize' represents the actual size read, assuming the first
+	N[b/B]. Only the last bits/Bytes are read, as marked by the 'realsize' 
+	keyword used in the documentation. The data should be placed into the LOW area.
+
+	All filesystems must be 512-byte aliagned, as well as all files on the filesystem.
+	This means all fiesystems must not be on boundaries that are NOT multiples of 512
+	and the same goes for files. This is a tradeoff for parsing speed.
+	
+	vp12 6 supports 3 main filesystems in the base system, being vp12vmfsf, 
+	vp12sdfsf, and p12lsdfsf. Each of these serve a completely different purpose
+	and have different structures associated with them to match said purposes.
+
+	All filesystems must start with vp12-native internal metadata used to allow
+	the system to identify the filesystem, no matter the type. This data includes
+		64B(ytes), realsize 8b(its) - type of the filesystem
+			Types -
+				0000 0000 - vp12vmfsf
+				0000 0001 - vp12sdfsf
+				0000 0010 - vp12lsfsf
+		64B, realsize 8B - disk/filesystem name (ASCII)
+
+	vp12vmfsf is a shortening for Vans Plan 12 Virtual Memory FileSystem Format.
+	The filesystem is a simple, linear and flat filesystem designed to hold 
+	information used to schedule and store processes and manage the system itself.
+
+	The first 192 bytes of a file will store basic info, being
+	64B, realsize 8B  - file name (ASCII data)
+	64B, realsize 8B  - fs name (again, ASCII data)
+	64B, realsize 8B  - file type (finally, ASCII data (eg. proc, fsys, etc etc))
+	This data is refereed to as the file 'metadata', although there isn't very
+	much that is meta about it besides the fact it should always be present
+	immediatly before every file.
+
+	There must always be 512 bytes of blank data before the first file.
+
+	This filesystem cannot store simple data, as it is used to store types of
+	data used for simple scheduling, process communication, and bootkeeping.
+	The types include
+		STATE   (state) - file used to resume a process
+		PROCESS (proc)  - file used to bootkeep a process
+		BUFFER  (buff)  - file used for inter-process I/O
+		SIGNAL  (sig)   - file used to represent a lightweight message
+		FSYS    (fsys)  - file used to represent the execution unit
+
+	STATE - This is a file used to resume process execution after a process
+	has been stopped. 
+		64B, realsize 8b     - process ID (ASCII value)
+		64B, realsize 64b    - process start memory (64-bit memory address)
+		64B, realsize 64b    - process end memory (64-bit memory address)
+		64B, realsize 64b    - process re-entry point (64-bit memory address)
+		64B, realsize 64b    - filesystem name (ASCII data)
+		64B, realsize 448b   - register dump (RBX-RDI)  
+		Not padded, 16386b   - register dump (ZMM0-ZMM31)
+
+	NOTE - Process IDs should zero the first if not held. Eg. id 113 statys
+			as 113, 13 becomes 013, and 3 becomes 003.
+
+	NOTE - Process IDs are treated as 3-byte values, but it would be more optimal
+			to treat them as 4-byte vales with a zero at the front. Actually, it
+			would be most optimal (if the operation involves memory) to treat it
+			as a 64bit value with 61 zero bytes (how it is stored).
+
+		The naming convention for a state file is simply (ID).sav
+
+	PROCESS - This is a file used to bootkeep a process
+		64B, realsize 8b  - process ID 
+		64B, realsize 8b  - process permission
+		64B, realsize 64b - start memory
+		64B, realsize 64b - end memory
+		64B, realsize 64b - process entry point
+		64B, realsize 64b - filesystem name
+
+		The naming convention for processes is simply (ID).prc
+
+	BUFFER - This is a file used to act as simple inter-process I/O
+		64B, realsize 8b  - controlling process ID
+		64B, realsize 8b  - controlling process permission
+		64B, realsize 32b - size marker (binary number)
+				This is a binary value used to tell the size of the
+				buffer. The valid ranges are from -
+					0000 0000 0000 0000 
+					0000 0000 0000 0000
+					- 0b size
+				All the way to
+					1111 1111 1111 1111
+					1111 1111 1111 1111
+					- very large buffer
+		(variable size) - buffer data
+			Note - buffer data (assuming bytes) MUST be a multiple of
+			64. This is so it will fit into exactly N cache lines with
+			no breaks or spills.
+
+		A buffer can be used to hold process data, allow processes
+		to communicate large I/O between each-other, and be used for
+		standard input and output.
+
+		Buffer files should follow the naming convention of (id).b(purpose)
+		This could be (say for process ID 2) 2.b for a process with a single
+		buffer, 2.bin for an input buffer, 2.bout for an output buffer, or
+		another purpose.
+
+	SIGNAL - this is a file used to act as a lightweight message
+		64B, realsize 8b  - sender process ID
+		64B, realsize 8b  - sender process permission
+		64B, realsize 64b - sender process filesystem name
+		64B, realsize 8b  - receiver process ID
+		64B, realsize 8b  - receiver process permission
+		64B, realsize 64b - receiver process filesystem name
+		64B, realsize 16b - signal type (binary number)
+
+		The signal types are used to tell a process what to do. A signal is
+		generally used to request a process commit an action.
+		Signal types are process-specific (eg. 0000 0000... 0000 may mean
+		one thing to a VESA hardware manager and another to the shell)
+		However, the general standard is 
+
+			 0 0000 0000 0000 0000 - read standard input for an action
+			 1 0000 0000 0000 0001 - read buffer specified by standard
+						 input for an action
+			 2 0000 0000 0000 0010 - read memory specified by standard 
+						 input for an action
+			 3 0000 0000 0000 0011 - write logical location in standard
+						 input to standard output
+			 4 0000 0000 0000 0100 - write logical location in standard
+						 input to memory specified by
+						 standard input (1st.2nd syntax)
+			 5 0000 0000 0000 0101 - signal marking logical completion
+						 of previous operation
+			 6 0000 0000 0000 0110 - perform standard logical operation
+						 to standard input
+			 7 0000 0000 0000 0111 - perform standard logical operation
+						 to standard output
+			 8 0000 0000 0000 1000 - signal marking logical start of
+						 current logical operation
+			 9 0000 0000 0000 1001 - signal marking logical denial
+						 of previous logical operation
+
+		Signals follow the naming convention of (reciver id).s(signal type)
+		eg. 2.s6. This can cause race conditiions and invalid writes if there
+		are multiple processes sending the same singnal. The solution to this
+		is to simply not have multiple processes sending the same signal type 
+		to the same process. A process should only be performin one op at a 
+		time anyway, so they should only be acting on one signal at a time.
+		If the reciver gets a return when creating the signal that it did
+		already exist, then they should wait a little bit and try again.
+
+	FSYS - this is a small file used to represent control in the system.
+		64B, realsize 64b - filesystem name
+		64B, realsize 4b  - controlling execution unit (binary number)
+		64B, realsize 8b  - controlling process ID
+		
+		This file exists once per filesystem and is used to represent the 
+		system's scheduling.
+
+		This file should simply be named fsys
+
+	vp12sdfsf is a shortening for Vans Plan 12 Simple Disk FileSystem Format. 
+	It is a very simple filesystem with very basic directory handling and 
+	arbitrary file sizes.
+
+	The filesystem is a very simple write-optimized filesystem with zero global
+	metadata. Instead, files appear fully linear on-disk using simple data inside
+	the file entry itself containing information such as name, directory
+	placement and sizing. Files themselves are not 'in directories' on-disk, but
+	are instead given a piece of data to show what directory to place them in on
+	the system. Every file start must be on a block of 512B(ytes). This means
+	files not exactly 8096B must have padding rounding their size up to the
+	nearest 512B value.
+
+	Although it is known as a disk filesystem, it does not HAVE to be on a
+	disk. The filesystem can be on any media supporting writes (and in some
+	cases, media only supporting append mode and read-only).
+
+	The format goes
+		64B, realsize 32B - file name (ASCII) padded with zeros
+		64B, realsize 8b  - file type 
+			Types - 
+				0000 0000 - unformatted/raw
+				0000 0000 - raw (disk image)
+				0000 0010 - machine code binary (AMD64 Tigerlake)
+				0000 0011 - vp12 format binary (AMD64 TigerLake)
+				0000 0100 - machine code binary (AMD64 IceLake)
+				0000 0101 - vp12 format binary (AMD64 IceLake)
+				0000 0110 - machine code binary (generic Xeon-class)
+				0000 0111 - vp12 format binary (generic Xeon-class)
+				0000 1000 - machine code binary (generic AMD64)
+				0000 1001 - vp12 format binary (generic AMD64)
+				0000 1010 - ASCII data
+				0000 1011 - iASM assembler source (TigerLake)
+				0000 1100 - iASM assembler source (IceLake)
+				0000 1101 - vp12 macro expansion source
+				0000 1110 - generic logfile
+				0000 1111 - ISO image
+				0001 0000 - EFI executable image
+				0001 0001 - vp12 STATE dump
+				0001 0010 - vp12 PROCESS dump
+				0001 0011 - vp12 BUFFER dump
+				0001 0100 - vp12 SIGNAL dump
+				0001 0101 - vp12 FSYS dump
+				0001 0110 - generic dump
+				0001 0111 - vp12 vp12vmfsf dump
+				0001 1000 - vp12 vp12sdfsf dump
+				0001 1001 - vp12 vp12lsfsf dump
+				
+				0001 1010 to 1111 1111 - undefined/invalid/other
+
+				These types are used to allow the reading process to 
+				know how to interpret or use the data. They are not
+				required and are simply standardized conventions.
+		Not padded, 2048B - directory path (ASCII)
+			This one is a bit special. This one is used to determine what
+			directory to place the file in when presenting it to the user.
+			This is simply the directory names separated by a ':' 
+			character with the ':' characters at the start and ends.
+			
+			An example could be 
+				:dir1:dir2: 
+			If the name of the disk is disk1 and the file file1, then
+			the file will be presented as 
+				disk1:dir1:dir2:file1
+			
+			The only limit to the number of dirs the file may be in is
+			the amount of characters allowed in the dir field.
+
+		This filesystem should be implimented as a process managing the disk.
+		It should piggy-back off of the disk device presented by the multiplexer
+		process and present abstract filesystem I/O.
+
+		The process should have 3 buffers and use 3 signal types.
+			buffer .bin for messages written to it,
+			buffer .bout for output data given by it,
+			signal 5 sent by it at completion of an operation,
+			signal 6 sent to it to read a file to .bout,
+			and signal 7 sent to it to write a file from .bin.
+
+		When reading, .bin should just contain the path of the file to read, and
+		should contain the path of the file to write with a newline before the
+		data to write to the file for writting.
+
+		An example may be
+
+			Writting
+
+				.bin
+					disk1:dir:file
+					Hello, World!
+
+				- send signal 7
+				- wait for signal 5
+
+			Reading
+
+				.bin
+					disk1:dir:file
+
+				- send signal 6
+				- wait for signal 5
+
+				.bout
+					Hello, World!
+
+	
+	p12lsdfsf is a shortening for the filesystem known as the Plan 12 Long String
+	Filesystem Format. This filesystem is characterized by not simply storing files,
+	but instead storing variable length strings of variable format data with 
+	expressive tags explicitly marking the relation held between said strings. The
+	tags in the filesystem is used to re-order strings into file-like objects at
+	runtime. This concept was pulled from a theoretical multiplexing system in the
+	Plan 12 family known as mp12, a shortening of Multiplexed Plan 12. However, in
+	mp12, the tags are used to hold permission data used to allow specific files to
+	be multiplexed across specific files via a layered signal system to allow 
+	specific processes to only view specific strings. Essentially, each 'layer' of
+	the OS has a different permission. Data flowing downward is tagged as strings,
+	and the layer sending the data to the application simply removes all strings 
+	tagged in a way so the layer receiving the data does not have access to the data
+	the tags believe it should not. 
+
+	At the time of writing this, mp12 is a conceptual system ugly outlined
+	and not yet implemented by a specification. 
+
+	Anyways, that was just a little piece Plan 12 trivia. 
+
+
+	The filesystem works by storing strings linearly on the disk and using a simple
+	linear searching system to find strings associated with the file being received
+	or opened and mapping the data to the file based on the strings dynamically at
+	runtime. The filesystem is incredibly unusual and abstract, but allows for 
+	very complex relations - since files are not held as 'files', sections of files
+	can have relations and tags instead of simply the entire file. This allows for
+	a new level of expressive indexing at a database level not seen in any popular
+	database, but instead built into the filesystem itself.
+
+TODO - p12lsfsf
+
+Process Model
+	In this version of Plan 12, all processes are represented by files on a 
+	filesystem. This allows for a uniform and dead simple interface simply by
+	interacting with files. In this version, all processes are simply files. All
+	process communication is done through simple file operations, AKA by 
+	creating/writing to buffer files and creating signal files. 
+
+	Every active execution unit is bound to one filesystem by the FSYS file. The
+	filesystem holds the information used to bootkeep processes, bootkeep 
+	scheduling, and allow for processes to communicate between each other.
+
+	Processes are designed to be single-purpose entities communicating between
+	each other. One process per logical operation or purpose, essentially. One
+	process should not fill multiple logical roles, or else race conditions or 
+	inconsitecies in the operation's state may occor due to signal type schematics.
+
+	The system is oriented to co-operative scheduling, but since it uses scheduling
+	primitives instead of a standard scheduler, any scheduler model can be emulated
+	with careful co-operation. This is one of the key advantages to this system.
+	Simply since there is no scheduler, any scheduler can be used per execution 
+	unit.
+
+	This is one of the largest advantages of the Vans Plan 12 system; the ability
+	to tie any scheduler of any sorts (or multiple, in theory) to one execution unit.
+	This allows for system flexibility not achieved by any other operating system.
+	This also allows for the system to be incredibly performant and expressive;
+	the user can simply choose what cores should run what schedulers and what processes
+	to place in said scheduling areas based on the process's or workload's needs.
+	Compare this to something like UNIX, where the system runs one global
+	scheduler, and processes that should run slower on this scheduler model than 
+	another do not have another option but to simply run at a lower efficiency.
+
+	Because of the per execution unit basis, the system is naively multithreaded
+	and scales very well. However, do not confuse this for isolation. The system 
+	has zero memory protection and the standard writing macros assume any
+	execution unit can read and write to or from any region of memory. This is a 
+	major trade-off of the Plan 12 architecture in general to allow the system
+	to not require a kernel in general. However, the Plan 12 architecture does
+	make room for a permission model, but does not force it onto the processes
+	of the system like a UNIX may.
+
+	Processes generally follow the lifespan of
+		Be given control -> check for signal file(s) related to it -> perform
+		action(s) based on signal said file(s) -> send signal(s) as return => 
+		hand off
+
+	Unless a process is special-purpose (eg. it will always know what it's buffers
+	are, where they are, and what it needs to do), signals will be the 'conductor'
+	of the process. This means signals are essentially a request for a process to
+	perform a specific action. This is very useful to use, as it is a lot easier
+	to parse than a buffer.
+
+	By the current signal implementation of Vp12 version 6 (this version), I could
+	read keyboard input by simply reading a file. This is another major advantage
+	of the Vans Plan 12 system, as every interface is a process-managed endpoint
+	exposed as IPC. (and as such, exposed as files, since the IPC subsystem is 
+	just a part of the file subsystem) 
+
+Hardware Management
+	In vp12, hardware devices are not managed by a kernel or privelaged subsystem, 
+	but instead by a small set of processes, one process dedicated per device (refered
+	to as hardware devices or hardware processes)
+
+	These generally are held in their own memfs due to performance reasons, as they
+	need isolated scheduling. These memfs-es generally either use round-robin (in
+	the case of memfs01) or simply do not use a scheduler (in the case of memfs02).
+	This takes full advantage of one of the biggest benifits of using a vp12 system;
+	that every execution unit can run it's own scheduler and can be tuned to it's
+	specific workload.
+
+	These hardware devices should be able to be used and found globally by 
+	the convention that they should always be placed into the same memfs-es by 
+	the same IDs. However, there is also the standard multiplexer device, which
+	will copy buffers and signals over to the proper process based on a database.
+	This will allow processes to simply be able to know to 'write to dspin.b is the
+	display device input file' instead of having to track what hardware devices 
+	the user has installed on the system.
+
+	Currently, hardware devices include
+		vesadsp - device for VESA display devices		- display device
+				buffers in and out
+					in should take a raw, exact-size and color
+					bitmap image into the input file to be 
+					rendered to the display
+					out should output the current framebuffer 
+					as an exact size and color bitmap image
+
+				signals 5, 6, and 7
+					5 should be sent from after an operation is completed
+					6 should be sent to when the process wants to render
+					the image in the in buffer to the display
+					7 should be sent to when the process wants to get the
+					current framebuffer
+
+				Class - Bitmap Display Device (item 4)
+
+				summary
+					This process talks to a VESA display. It takes 
+					a signal type of 6 to render the data in the in
+					buffer as an exact size and color bitmap image
+					and sends a signal of 5 back. It takes a signal
+					type of 7 to write the current framebuffer as an
+					exact size and color bitmap image to the out buffer
+					and sends a signal type of 5 back. 
+					
+		ps2kdb 	- device for PS2 keyboard devices		- keyboard device
+				buffer out
+					out should be used to hold the current batched 
+					contents of the input
+
+				Class - ASCII Input Device (item 3)
+
+				summary
+					This process will batch the keyboard input from 
+					the standard PS2 keyboard port to a memory buffer
+					and occasionally append the entire buffer to the
+					out buffer and clear the memory buffer.
+
+
+		tty	- abstraction device for printing characters	- tty device
+				buffer in
+					in should take a stream of ASCII characters
+					to be written to the display.
+
+				signals 5 and 6
+					6 should be sent to render the in buffer to the
+					display and 5 should be sent when the operation is
+					complete.
+
+			Class - Bitmap Character Device (item 2)
+
+				summary
+					This process will wait for a signal type of 6.
+					When it recieves it, it will convert the ASCII
+					stream of characters in the in buffer to a bitmap
+					image and render it to the display.
+
+
+		nvme - nvme device handler
+			buffers in and out
+				in should contain the start block, a dash (-) character, the end
+				block, a newline then the raw data to write to the blocks for
+				writting and the same first line for reading. When reading,
+				it will write the contents to the out buffer.
+
+			Signals 5, 6, 7
+				6 sent to write the data formatted from in to the blocks specified,
+				7 to read the blocks specified by the in buffer to the out buffer,
+				and 5 sent at completion.
+
+			Class - Disk or disk-like (item 1)
+
+			Summary
+				This process will wait for a signal type 6 or 7. At 6, it will
+				write data (formatted (start sector)-(end-sector)(newline)(data)) to the
+				sectors specified from the in buffer. At signal 7, it will read the
+				sectors specifed (same format, simply without the data) to the out
+				buffer, and under both, it will send a signal of 5 when completed.
+				Note - this device should be expected to share an execution unit with
+				the filesystem handler for the drive. In most cases, this would be the
+				handler for the vp12sdfsf or vp12lsfsf.
+
+	The standard multiplexer device will simply copy the buffers and signals of
+	hardware devices to standard buffers. These buffers can be defined in the
+	config file at memfs09:stdmtplx - this should be a configuration file loaded
+	by the standard multiplexer at start. This file should use the syntax of
+	(real file) => (fake file). The standard config file should contain the contents
+
+		memfs01:2.bin => memfs01:dspl.bin
+		memfs01:2.bout => memfs01:dspl.bout
+		memfs01:2.s5 => memfs01:dspl.s5
+		memfs01:2.s6 => memfs01:dspl.s6
+		memfs01:2.s7 => memfs01:dspl.s7
+		memfs01:3.bin => memfs01:tty.bin
+		memfs01:3.s6 => memfs01:tty.s6
+		memfs02:1.bout => memfs01:kbd.bout
+		memfs03:1.bout => memfs01:disk.bout
+		memfs03:1.bin => memfs01:disk.bin
+		memfs03:1.s5 => memfs01:disk.s5
+		memfs03:1.s6 => memfs01:disk.s6
+		memfs03:1.s7 => memfs01:disk.s7
+		memfs03:2.s7 => memfs01:fs.s7
+		memfs03'2.s5 => memfs01:fs.s5
+		memfs03'2.s6 => memfs01:fs.s6
+		memfs03'2.bin => memfs01:fs.bin
+		memfs03'2.bout => memfs01:fs.bout
+
+	Older versions of this multiplexer were more complex and would handle
+	devices differently depending on the third item, now dropped. This was
+	to allow a standard interface for devices. However, it is now up to the
+	device itself to provide a standard interface.
+
+Scheduling
+	Vans Plan 12, unlike normal operating systems, does not have it's own 
+	independent scheduler. Instead, the system uses simple cooperative-oriented
+	scheduling primitives to allow processes to schedule themselves. Due to the
+	flexibility of the primitives, any scheduling method can be emulated by them.
+	Another very useful feature, because every execution unit is fully isolated
+	by the filesystem, this means that every execution unit may run on a different
+	scheduler. This is normally taken into effect in the base system by running
+	separate schedulers for separate hardware devices, such as round-robin for
+	display-related devices such as the TTY and framebuffer, or even no scheduler
+	at all in the case of the kbd device. Every scheduler is bound to a filesystem,
+	which is bound to one execution unit, as described previously.
+
+	Scheduling is done through a small set of inline assembler macros expanded 
+	at compile time. This allows for very low overhead system operations. These
+	macros express simple yet flexible co-operative primitives that may be used 
+	for any purpose the processes using them wishes. This allows for an entire
+	new class of systems flexibility and expressiveness not present in any other
+	operating systems or execution architecture.
+	
+	The one downside to all of this; in a standard install, there is no scheduler
+	protection, allowing any process to create or hand off to any process of any
+	permission. This is, as most decisions in the system, a trade-off reducing
+	security and error tolerance for performance and code efficiency.
+
+	For more information on how scheduling actually takes place, see the section 
+	on macros.
+
+Standard interfaces
+	This section describes standardised interfaces for service managers to allow
+	processes to not need to know how to write to each specific independent deviec
+	variation differently.
+
+	This will give a detailed, implimentation-focused description of the management
+	interface and behavior of devices.
+
+	Disks and disk-like devices, class 'Disk or disk-like', item 1
+		Disks should have 2 buffers and use 3 signals. Buffers bin and bout and
+		signals 5, 6, and 7. Buffer bin should be used to write raw data to the
+		disk. It should contain the format of, the first line having the start
+		sector, an ASCII dash character (-), then the end sector, followed by
+		an ASCII newline character, then the raw data you wish to write. The
+		service should then recieve a signal type of 6 to write this data to
+		the blocks specified by the first line. The device should send a signal
+		of type 5 in return at completion. To read, you should simply ommit the 
+		data from the bin buffer and send a signal type of 7. The device will then
+		copy said sector's raw data to the bout buffer and send a signal type of
+		5 in return.
+
+	Teletype, class 'Bitmap Character Device', item 2
+		Teletype devices should have 1 buffer and use 2 signals. Buffer bin and
+		signals 5 and 6. Buffer bin should be a byte stream representing sprites
+		to render to the display. These sprites should be held in memfs07, 
+		formatted as vp12vmfsf. These should be a 12x12 image of the symbol. The name of 
+		the sprite should be 8 bits, aka one byte, held in ASCII format, just as the
+		byte of the character written to bin. When a signal of 6 is given, 
+		the service should check the directory and match the file name against the
+		byte stream in bin. The service should, assuming a bitmap display device 
+		as the backend, append the image associated with the name to the display,
+		once for each byte in the stream, then send a signal of 5 in return. The
+		path should contain at least one file for every printable ASCII character,
+		but can contain arbitrary images.
+
+	Keyboards, class 'ASCII Input Device', item 3
+		Keyboard deviecs should only require one signal, being buffer bout. This
+		buffer should hold an output stream of ASCII format characters translated
+		from whatever may come from the input stream. In standard implimentations,
+		this is a conversion table or function from PS2 scan codes into ASCII 
+		characters, some special handling for non-printable characters or special
+		characters such as the newline, and a system to output or dump said
+		characters to the bout buffer. Simply, a device translating some form of
+		input data into ASCII characters and writting it to it's output buffer.
+
+	Bitmap displays, class 'Bitmap display device', item 4
+		Bitmap display devices should have 2 buffers and 3 signals. Buffers bin and
+		bout and signals 5, 6, and 7. Buffer bin should take a 1920x1200x32 nonpacked
+		bitmap image into the file to be rendered to the display. If this does not
+		match the size of the physical display, then the process handling this should
+		make some form of ajustment before rendering. When a signal of type 6 to render 
+		the contents of the bin buffer to the display and a signal with a type of 5
+		once the operation is completed. When given a signal type of 7, the current
+		display image should be written to the bout buffer in the same format as
+		required for the bin buffer with a signal type of 5 sent back at completion.
+
+Filesystem standards
+	Filesystem memfs01 should be dedicated to hardware. This filesystem should run
+	the multiplexer device as process 1, the bitmap display device as process 2, 
+	and the teletype device as process 3. This should also be where the multiplexer
+	device exposes the logical endpoints for devices. This filesystem should be
+	created by the init phase of the system and be formatted as vp12vmfsf. This
+	filesystem should run a round-robin scheduler.
+
+	Filesystem memfs02 should be dedicated to the keyboard device. This should not
+	run any other processes, but simply the keyboard device. This filesystem should
+	be created by the init phase of the system and should be formatted as vp12vmsfsf.
+	This filesystem should not run a scheduler.
+
+	Filesystem memfs03 should be dedicated to the disk hander process and the 
+	filesystem handler process. The filesystem handler should run as process 2 and
+	the disk manager as process 1. Thils filesystem should be created by the init
+	phase of the system and should be formatted as vp12vmfsf. This filesystem should
+	run a round-robin scheduler
+
+	Filesystem memfs04 should be dedicated to user processes. This filesystem should
+	be created during the init phase of teh system and should be formatted as vp12vmfsf.
+	This filesystem should run a co-operative scheduler.
+
+	Filesystem memfs07 should be dedicated to the teletype device's sprites. This
+	filesystem should not be used to store processes, but instead to store vp12vmfsf
+	buffer files. This filesystem should be created by the init phase of the system and
+	should be formatted as vp12vmfsf.
+
+	Filesystem memfs09 should be dedicated to system configuration files. This
+	filesystem should not be used to store processes, but instead vp12vmfsf buffer files.
+	This filesystem should be created by the init phase of the system and formatted as
+	vp12vmfsf.
+
+Macros
+	Vans Plan 12 is an assembler-oriented operating system, meaning higher level
+	languages do NOT support the system's primitives. The operating system uses
+	a system of language independent macro substitutions for system functions.
+	Although the macro system is language-independent (because it is 
+	pre-compilation), the system function macros are written in assembly.
+
+	The macro system, known as vp12smsl (Vans Plan 12 Simple Macro Substitution
+	Language) is a pre-compile macro language based on simple text and argument
+	substitution. This macro system is used for several system functions, such as
+	scheduling and vp12vmfsf parsing. The language follows the syntax of 
+
+		#define,(name) - keyword to define a macro, followed by a ',' character
+			  and the macro name followed by the text to substitute
+			  the associated call statements of the same name with on newline
+			  a newline (eg.
+				'#DEFINE,examplename
+				thing1
+				thing2'
+				&ENDSEC)
+		@call,(name),(arg(s))   - keyword to call a macro, followed by a ',' character, 
+			  further followed by another ',' character (if) followed
+			  by arguments to substitute separated by commas (eg, with
+			  zero arguments it could be '@CALL,examplename', and with
+			  multiple arguments it could be 
+			  '@CALL,examplename,example1,example2,example3') 
+		&endsec,(name) - keyword used to end the definition of a macro. Must be 
+			  present after the final newline of the #DEFINE keyword.
+		%arg(argnum)   - keyword used to represent an argument in code. Argument
+			  number being the numerical order it was defined by in the
+			  @CALL statement.
+		
+		*(varname) - substitute an arbitrary variable (eg. *var)
+		!(varname),(value) - define an arbitrary variable (eg. !var,18)
+		##      - comment
+
+		Variables should be assiagned as soon as they are mentioned in the ! or !!
+		statement. No lazy assiagnment.
+
+	A full example piece of code could be
+
+		memfs04:macros.smsl
+			#define,func
+			mov %arg1, RAX
+			mov %arg2, RBX
+			!var,'data'
+			!reg,r8
+			mov *reg, *var
+			&endsec
+		memfs04:code.asm
+			@Ccall,func,rdi,rsi
+
+	After macro processing, memfs04:code.asm's @CALL statement will be replaced
+	with
+		mov rdi, rax
+		mov rsd, rbx
+		mov r8, 'data'
+
+	NOTE - 
+		Variables should be substituted BEFORE arguments - this means an argument can
+		contain a variable but a variable CANNOT contain an argument.
+
+	Vans Plan 12 uses this macro system for system functions. A process can simply
+	call a macro to perform a standard operation instead of having to know how to
+	perform it. However, the process calling the macro is still performing the 
+	operation themselves.
+
+	The system keeps the file 'memfs09:glb.smsl'. This file contains all
+	macro definitions for standard system functions. The current macros included
+	in Vans Plan 12 release version 6 are listed below.
+		
+		spawn (name) (memfs) (permission) (executable path) (start memory)
+			(end memory) (entry)
+			spawn is the macro used to create a process using a binary
+			written in standard flat, memory-dependent machine code. If
+			the binary does not use the native OS format, this macro can
+			be used to spawn the binary. Keep in mind, the binary must
+			expect the system to be in 64bit protected mode, as this is
+			what the operating system hands off in.
+
+			This macro WILL check permissions. If the memory region
+			is already allocated, then the process with a higher ID will be
+			killed to free the memory using the KILL macro.
+
+			name  		- name of the process to be created
+			memfs 		- memfs to spawn the process in
+			executable path - full path to the executable file
+			permission	- permission to spawn the process with
+			start memory	- start memory region to place the binary
+			end memory	- end memory region to place the binary
+			entry		- entry point of the program
+
+			All of this metadata is normally embedded into the OS
+			executable format. However, this macro is used to spawn a
+			process explicitly not using this format.
+	
+		spawnnf (name) (memfs) (permission) (executable path)
+			spawnnf is the macro used to create a process using a binary
+			written in the OS native format. This macro simply parses
+			the binary format to get the last three arguments of SPAWN, 
+			supplements them, and calls SPAWN. 
+			Yes, this macro is a wrapper around SPAWN for convenience.
+			I guess you could also say the same thing about the OS 
+			executable format.
+
+			name            - name of the process to be created
+			memfs           - memfs to spawn the process in
+			executable path - full path to the executable file
+			permission      - permission to spawn the process with
+
+		start (id)
+			start is the macro used to begin executing a spawned process.
+			In older versions of vp12 (~3.X - early 5.X), the SPAWN macros
+			would immediately start executing the process being created. 
+			However, it was later realized this could cause ordering issues
+			when setting up some types of pseudo-schedulers, such as a 
+			round-robin scheduler.
+
+			All this macro does is parse the filesystem for the process
+			info, update the system state to show the new controlling 
+			process, and jump to the process's entry address specified by
+			the file previously parsed
+
+			id    - id of the process to start
+
+		save (memfs) (id)
+			save is the macro used to save the current state of a process.
+			This macro will simply dump usable registers of the process
+			to a file, as well as information used to resume the process
+			later. Essentially, this is the macro used to set up the 
+			resume state for the pseudo-scheduler.
+
+			Registers RBX to RBP as well as zmm0 to zmm31 to the state
+			file allocated to the process.
+
+			memfs - memfs of the process to save
+			id    - id of the process to save
+
+		yield (id to yield to)
+			This macro will update the FSYS file and hand control to another
+			process. This will NOT save the state of the process, as unlike
+			in older versions of vp12, SAVE is not called in this macro and
+			must be called before.
+
+			id to yield to - id of the new process give control
+
+		exit (memfs)
+			This macro is used to exit the process completely. This will
+			remove all files associated with the process ID and hand off
+			to the default process mentioned by the FSYS file. The
+			FSYS file will be updated to show the new control. Something to
+			note, memory used by the process is not cleared, but the 	
+			process allocation files are no longer present, macros will
+			believe the memory is free and re-allocate it to another 
+			process when needed.
+
+			memfs - memfs of the process to exit
+
+		kill (memfs) (id)
+			This is essentially the same as EXIT, but it does not hand
+			off to a new process after. This does NOT update the FSYS file
+			in any way. 
+
+			memfs - memfs of the process to kill
+			id    - id of the process to kill
+
+		continue (memfs)
+			This macro will simply call SAVE and hand control off to the
+			default process marked by the FSYS file. This is used as a way
+			to exit a process without freeing it's memory or killing it.
+
+			memfs - name of the memfs to perform the action on
+
+		FALL (memfs)
+			This will simply calculate the lowest ID process in a memfs
+			and hand off to it. This is a primitive to restart scheduling
+			and is used to emulate round-robin systems with a bit more
+			ease.
+
+			memfs - name of the memfs to perform the action on
+
+		addmem (start) (end) (name) (format) (core) (default ID)
+			This is the macro used to create a filesystem in a memory
+			region. This simply will zero the memory regions (without a 
+			check if they are allocated), create the FSYS file if the fs
+			is formatted as vp12vmfsf, initialize the core if the fs is
+			formatted as vp12vmfsf, and set RAX to the current memfs name.
+
+			start      - start memory region to allocate
+			end        - end memory region to allocate
+			name       - name for the new fs
+			format     - format for the mew fs
+			core       - (not required) core to bind the (if 
+					format=vp12vmfsf) memfs to 
+			default ID - (not required) default ID to set in the (if 
+					format=vp12vmfsf) FSYS file
+
+		mov (srctype) (src) (dstype) (dst)
+			This macro will parse the src and dst type as either an fs 
+			format name or 'mem' for a memory region and buffer the data
+			pointer as srcthrough AVX512 vector registers into the dst 
+			path.
+
+			srctype - type of source
+			src     - path of source
+			dstype  - type of dst
+			dst     - path of destination
+
+		parsefs ([sig|buff|state|proc|fsys]) (memfs) (name) ([creat|nocreat])
+			This macro is used to parse a file in a vp12vmfsf fs.	
+			This macro will return R8 as the pointer to the start of the file,
+			R9 as the size of the file, and, if creat is give, R12 set as all 
+			1s if it was created, or if nocreat is give, R12 as 1 if the 
+			file exists.
+
+			Old versions used to set R11 as the start to the file metadata,
+			but this was removed to help free an extra internal scratch
+			register. This data can be found at [r8 - 192], aka the start
+			of the file, minus 192 bytes.
+
+			The different values of argument 1 set the type of the file 
+			to parse.
+
+			arg1  - type of file to parse
+			memfs - memfs the file is located in
+			name  - name of the file
+			arg4  - create or do not create file if not present
+
+		conv (reg)
+			This macro is used for argument expansion. If the first
+			argument is the name of a register, the data in said register
+			will be returned in the r9 register. If there is data after the
+			register name (ASCII) in the argument, it will be packed
+			into the regiser in the high side, shifting the extra low data
+			out. If arg1 is not a register name, it will simply return the 
+			data placed in arg1 into r9.
+
+		tcefi
+			This is a system init stub for TianoCore UEFI systems. This
+			macro is used to create the stage 1 env described in the
+			bootstrap docs.
+		
+		coolstrap
+			This is the macro for the default system init stub. This
+			macro is used to create the working env for the standard 
+			vp12 programming env described in the bootstrap docs.
+
+Programs using memory should not address it directly, but instead relative to variables
+startmem, endmem and procent. These variables should be set by the macro expander at
+system compile-time and should. This allows a process to not need to be placed into any
+specific area of memory, but instead allowed to dynamically change at compile-time.
+
+Executable format
+	This operating system, as most do, provides it's own native execution format.
+	This is a very simple format built around static memory-dependent (memory
+	sections of a process are typically defined at compile-time via the argument
+	substitution system mentioned earlier) binary with extra metadata to fill a 
+	lot of the arguments mentioned by the SPAWN macro earlier.
+
+	The format goes
+		SPAWN (name) (memfs) (permission) (executable path) (start memory)
+		(end memory) (entry)
+
+		64B, realsize 8B - memory start
+		64B, realsize 8B - memory end
+		64B, realsize 8B - memory usage size
+		64B, realsize 8B - process entry point
+		
+		Then the optional debug data
+		The debug data is a list of all macros used in order of when they
+		are called. The reason for this is to allow developers to easily
+		read the data and know what macros are used without manually searching
+		the binary.
+		
+		For every macro called,
+		64B, realsize varies - macro name (ASCII string)
+		not padded, 64B      - blank marker (next macro)
+
+		And then 128B of blank data to mark the end of the metadata.
+
+	Pretty simple, hm? This format has a minimum size overhead of 384 bytes
+	of data. I know this is a lot, but this follows the padding model of the OS.
+	
+	All of this replaces the last three arguments of the SPAWN macro. AKA for the
+	macro to spawn an OS-native binary (SPAWNNF), the last three arguments of 
+	SPAWN are not needed and simply dropped.
+
+VP12P
+	12P is a universal Plan 12 format for remote data sync standard in Plan 12 
+	operating systems. Since vp12 is a Class 1 Plan 12 operating system, a compatable
+	implimentation of 12P is included into the base system. This includes the
+	filesystem format and packet protocol. This implimentation of the 12P protcol
+	implimeted in the vp12 operating system is known as 'vp12p', also known as
+	Vans Plan 12 Protocol, as opposed to the Plan 12 Protocol.
+
+	This section of documentation will only discuss the specifics of the implimentation
+	of the 12P protocol specific to the vp12 operating system.
+
+	The microarch name should be set based on the *march variable compiled into the
+	program, although this can usually be something untrue and it will not matter
+	too much as long as it matches the arch of the *arch variable (eg. *march Tigerlake
+	wich *arch amd64). This maps to 12P 'logical microarch name'.
+	The arch name should be set by the *arch variable, however this should be set to 
+	'amd64', since VP12 only supports 64bit PC platforms. The *arch variable should
+	always be held lowercase with the *march variable having just the first character
+	capitalized.
+	The *ed variable should hold the logical endianness of the system, and since VP12
+	is always to run on an amd64 machine, this should always be set to binary 01, AKA
+	'little' by the 12P standard. This maps to the 'logical endianness name' in the 12P
+	standard.
+	The Plan 12 implimentation name should always be set to 'VP12'.
+	The variable *vp12v should hold the VP12 implimentation number, which for this
+	version should be 6. This variable maps to the 12P 'Plan 12 implimentation version'
+	field.
+	The variable *p12v is mapped to the field 'Plan 12 version' and should usually be
+	set to 2.
+	The variable *p12c is mapped to the field 'Plan 12 compliance version' and should
+	usually be 1, since VP12 version 6 is compliant against Plan 12 version 2, tier 1,
+	as it is the reference version and would obviously be of the highest tier.
+	The variable *12pv maps to the '12P version' field, and should generally be 2.
+	The variable *12piv maps to the '12P implimentation version', which should currently
+	just be 1, since there is only one version of VP12P.
+	The machine ID is generated at the start of the process creation, and should always
+	be the first thing it does.
+	The filesystem names sent should be the literal filesystem name, in lowercase ASCII,
+	eg. vp12vmfsf, vp12lsfsf, vp12sdfsf, and so on if there are more.
+
+POSIX
+	It is theoretically possible to make a POSIX C compiler for a vp12 compliant system,
+	although it may prove to be very difficult. This has been loosley thought on by the
+	development team (AKA me) and a few ideas have floated around
+
+		Runtime intepreting and injecting
+			Slow. This idea is a bit silly, due to how overwealmingly slow it would be.
+			It is most definetly possible, but incredibly slow.
+
+		Make vp12 into UNIX
+			You wish.
+
+		Make the compiler do everythig
+			Have the compiler understand things like file descriptors, special paths
+			(eg proc, dev, so on), syscalls linking and have it output a format
+			compatable with vp12. Eg, instead of a write syscall on /dev/tty, it could
+			output vp12-specific code to talk to the tty device.
+
+			This is the most practical.
+
+
+		Under the third option mentioned (the only likley one), a few items could be
+		ported
+
+			open() -> signals and buffers talking to the file server + the compiler 
+						managing the file descriptors
+			read() -> simular to open()
+			write() -> simular to read()
+			exec() -> spawn a new process
+			fork() -> just exec() and hope it does not fall apart
+			pthreads() -> spawn a worker process on another memfs
+			malloc() -> not sure / ignored possibly (??) - maybe alloc a buff file
+
+		The compiler would see these operations and match them to assembler output 
+		that can be assembled by the vp12 ASSEMBLE and macro system EXPAND based
+		on a substitutions config file.
+
+		This work is also useful for designing a high-level programming language for the
+		Plan 12/VP12 system. Concepts present in high-level languages are mostly POSIX
+		concepts (for some arbitrary reason) and this maps pretty well. However, a
+		high-level language native to VP12 will most likley not be made any time soon,
+		as assembler language is enough to express it properly In fact, the macro system
+		in itslef is a high-level language of sorts in it's own little way and can be
+		used to build an entire language in itself on top of assembler. A POSIX layer
+		will most likley be made just to make adoption slightly easer, and it will
+		probably be made by making a simple C front-end based on a backend using the
+		macro language of VP12.
+
+The Standard Library
+	The Standard Libary (std.smsl) is a macro definitions file designed to make the life
+	of a developer targetting a VP12 system easier. It adds simple high-level operations
+	as macros instead of manual parsing/walking.
+
+	Varbables
+		The file defines two variables per hardware device - *Nfs and *N. *Nfs being
+		the filesystem the hardware device is in, and *N being the process ID of the
+		hardware process (N being the process itself). Eg. *dsplfs, *kbdfs, *tty, so on.
+
+		The file also defines variables *myfs and *myid, *myfs being the filesystem of
+		the current process, and *myid being the ID of the current process.
+
+	Macros
+		dial fs, procid, buffname
+
+			Dial will find a buffer in the filesystem. It should return r12 as 1 if it was
+			found, r11 as the size of the buffer, and r8 as a pointer to the start of the
+			data section of the buffer. 
+
+			fs should be the filesystem of the buffer to find, procid should be the 
+			process ID of the owner of the buffer, and buffname should be the name of 
+			the buffer (what comes afer N.b in the name.)
+
+			Example 
+				@call,dial,'*dsplfs','*tty','in'
+				@call,dial,'*myfs','*myid','in'
+
+		create fs, procid, size, buffname
+
+			Create will create a buffer if it does not alerady exist. It should return r12
+			as 1 if created, r11 as the size of the buffer, and r8 as a pointer to the start of the
+			buffer data area. Note this maintains compatability with the return values of
+			Dial (even with r12, since it should be 1 unless something went wrong).
+
+			fs should be the filesystem to create the buffer in, procid should be the ID of
+			the process owning the buffer, size should be the size of the buffer, and
+			buffname should be the name of the buffer (what comes after N.b.).
+
+			Examples
+				@call,create,'*myfs','*myid',512,'tmp'
+				@call,create,'*myfs','12',512,'in'
+
+		poll senderfs, senderprocid, recvfs, recvid, sigtype, count
+
+			Poll will poll for a signal file and return once it is found or once the 
+			count has expired. r12 should be returned as a 1 if the signal was found.
+
+			senderfs should be the filesystem of the sender, recvfs should be the
+			filesystem of the target process, senderprocid should be the ID of the sender,
+			recvprocid should be the ID target process, sigtype should be the type of
+			signal and count being the number of times to poll for the signal
+
+			Examples
+				@call,poll,'*ttyfs','*tty','*myfs','*myid',5,32
+
+		signal senderfs, senderprocid, recvfs, recvprocid, sigtype
+
+			Signal is used to send a signal to another process. It should return r12 as 1
+			to maintain return compatability with Poll.
+
+			senderfs should be the filesystem of the sender process, senderprocid should
+			be the ID of the sender process, recvfs should be the filesystem of the 
+			target process, recvprocid should be the ID of the target process, and sigtype
+			should be the type of signal to be send.
+
+			Examples
+				@call,signal,'*myfs','*myid','*dsplfs','*tty',5
+
+		clean fs, procid
+
+			Clean is used to cleanly exit a process, removing all data owned by it. 
+			Unlike the exit of glb.smsl, this macro will remove the buffers and signals
+			owned by it or sent to said process before exiting it.
+
+			fs should be the filesystem to clean, and procid should be the
+			process ID of the process to clean.
+
+			Examples
+				@call,clean,'*myfs','*myid'
+				@call,clean,'*dsplfs','*tty'
+
+Other Libraries
+	This section describes other macro libraries held in the system. These are just
+	general functions for complex operations simplified to single macros.
+
+	The libraries include
+
+		aml.smsl - ASCII manipulation library
+			This library includes operations for ASCII manipulation, such as
+			converting ASCII to binary and vise versa.
+
+			Macros
+				caui data
+					Convert ASCII data to an unsigned integer and store to
+					register r12. Data must be able to fit into 64 bits.
+					This applies to the data in both ASCII format and as an
+					unsigned 64bit integer. Zero data will be ignored.
+
+					Example
+						@call,caui,'182'
+						@call,caui,'21843'
+
+				cuia data
+					Convert an unsigned integer into ASCII data and store to
+					register r12, Data must be able to fit into 64 bits.
+					This applies to the data in both ASCII format and as an
+					unsigned 64bit integer. Zero data will be ignored.
+
+					Example
+						@call,cuia,1972
+						@call,cuia,92732
+Examples
+	Here, a few example programs will be showcased
+
+	Hello, World, using the TTY process (no lazy parsing)
+
+			@call,parsefs,'fsys','rax','fsys','nocreat'
+			mov rbx, [r8 + 191]
+		loop1:
+			@call,parsefs,'buff','memfs01','3.bin','nocreat'
+			cmp r12, 1
+			jne loop1
+			cmp [r8 + 188], 2
+			jle exitcase
+			mov [r8 + 192], 'hi'
+		loop2:
+			@call,parsefs,'sig','memfs01','3.s6','creat'
+			cmp r12, 1
+			jne loop2
+			mov [r8 + 63], rbx
+			mov [r8 + 184], rax
+			mov [r8 + 255], '3'
+			mov [r8 + 376], 'memfs01'
+			mov [r8 + 447], 6
+		loop3:
+			@call,parsefs,'sig','rax','rbx.s5','nocreat'
+			cmp r12, 1
+			jne loop3
+			cmp [r8 + 63], '3'
+			jne loop3
+			cmp [r8 + 184], 'memfs01'
+			jne loop3
+			cmp [r8 + 255], rbx
+			jne loop3
+			cmp [r8 + 376], rax
+			jne loop3
+			cmp [r8 + 447], 5
+			jne loop3
+		exitcase:
+			@call,exit,rax
+
+	Hello, World, using the std.smsl instead of glb.smsl
+
+			@call,dial,'*dsplfs','*tty','in'
+			cmp r12, 1
+			jne exitcase
+			cmp r11, 2
+			jl exitcase
+			mov [r8], 'hi'
+			@call,signal,'*myfs','*myid','*dsplfs','*tty',6
+			@call,poll,'*dsplfs','*tty','*myfs','*myid',5,32
+		exitcase:
+			@call,exit,'*myfs'
+
+	Add two numbers from keyboard input and write result to display (assuming immediate valid input)
+	(a bit sloppy and poorly optimized but working i am not very good ok?)
+
+			@call,dial,'*kbdfs','*kbd','out'
+			cmp r12, 1
+			jne exitcase
+			xor rbx, rbx
+		check:
+			inc rbx
+			cmp [r8 + rbx], ' '
+			jne check
+			mov rcx, rbx
+		check2:
+			inc rcx
+			cmp [r8 + rcx], ' '
+			jne check2
+			@call,cuia,rbx
+		add:
+			add rdx, [r8 + rbx]
+			dec rbx
+			cmp rbx, 0
+			jne add
+		add2:
+			add rsi, [rbx + rcx]
+			dec rcx
+			cmp rcx, 0
+			jne add2
+			add rbx, rcx
+			@call,dial,'*dsplfs','*tty','in'
+			cmp r12, 1
+			jne exitcase
+			## check size here
+			mov [r8], r12
+			@call,signal,'*dsplfs','*tty','*myfs','*myid',6
+			@call,poll,'*dsplfs','*tty','*myfs','*myid',5
+		exitcase:
+			@call,exit,'*myfs'
+
+( docs )                                                                         ( docs )
+

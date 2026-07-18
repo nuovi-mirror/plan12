@@ -1,0 +1,9 @@
+VERSIONS 
+
+1.0 to 1.28 - LOST
+2.0 to 2.16 - LOST
+3.0 to 3.12 - LOST
+4.0-rolling - LOST
+5.0 to 5.8  - LOST
+5.9 	    - LEGACY
+6	    - INDEV-STABLE

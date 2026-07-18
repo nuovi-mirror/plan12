@@ -1,0 +1,451 @@
+( docs )                                                                                 ( docs )
+
+Plan 12 Architecture and Specifcation
+Specifcatio Version 2
+
+Plan 12
+	Plan 12 is a theoretical operatind system based on the premice of proper
+	and unified filesystem operations as hardware and software interfacing
+	and abstraction. The Plan 12 architecture is designed to reduce system
+	complexity dramaticly. It does this by providing a unified file-oriented
+	interface for system, hardware and process management.
+
+	In the Plan 12 architecture, everything usable is a file. Processes are
+	represented by files
+
+Specifics
+	IPC/process communication
+		Signals - A signal is an ultralight message requesting a process 
+			  perform a general action, read/write a buffer, perform
+			  a logical operation, signal completion, perform a
+			  process-specific operation, or more depending on the 
+			  implimentation.
+		Buffers - A buffer is a heavyweight data sharing primitive. A shared
+			  file managed by signals for syncronus reads and writes able
+			  to hold large data.
+
+		These two basic concepts should be first-class system primitives. 
+		Others may be added into the base system, but these should be included.
+
+	Processes and process bootkeeping
+		Process files - A process file is a file used to bootkeep a process. 
+				It should contain all hardware-specific and
+				implimentation-specific data to manage, scedule and
+				start/stop the process at any moment.
+		State file    - A state file is a file used to bootkeep a process save
+				point. This should contain all of the information used
+				to start a process, and optionally restart it.
+		System file   - This file is used to represent the filesystem in
+				question that process data is being stored in. This can
+				be used to only represent the filesystem and have 
+				scheduling state offloaded, or it can be used to represent
+				both filesystem and scheduling state.
+
+		This is generally reguarded as the absolute bare minimum. These should be
+		included into the base system as a primitive, but others may be added to 
+		the release of said Plan 12 system if needed.
+
+	Sceduling
+		Sceduling is not defined by the Plan 12 specifcation and is up to
+		the implimentation to impliment fully. However, the system and 
+		state files should be included into the system to represent scheduling
+		in some way. Besides this representation, the release of said Plan 12
+		system should be able to impliment any they choose, as long as it can be
+		represented by said files.
+
+	Hardware management
+		Hardware is to be managed in a way simular to standard processes. 
+		The specific details are up to the hardware device and implimentation
+		but should follow a few methods
+		
+		signal-based copy  - Poll for signals and perform buffer operations
+				     based on said signal types.
+		always-active copy - Constant-copy data from a hardware device to a
+				     buffer or from a buffer to a hardware device.
+
+		These types should be present in a Plan 12 system, as they are generally
+		the base used to create other types. Other types can be included as 
+		primitives, but these primitives must be included.
+
+		It is standard for hardware to be implimented as a subset of individual
+		processes per device, but this is not required. However, the hardware
+		management system/subsystem must expose hardware in a uniform way that
+		is simular to or directly using the primitives of IPC.
+
+	Permission enforcement
+		The Plan 12 architecture requres no permission enforcement but does
+		not demand it not be present. However, it is heavily encouraged, if
+		the enforcement is present, for it to be emergent from the system 
+		structure instead of a primitive or manager system. Keep in mind
+		none of this is requred.
+
+	Kernel(s) or lack of
+		The Plan 12 architecture (by design) does NOT require any kernel or
+		central manager in any way. This is one of the major advantages of
+		the Plan 12 architecture. However, this is not a requirement. A 
+		Plan 12 system is allowed to have a kernel or central manager, but it
+		is very strongly discouraged.
+
+	Time or lack of
+		The Plan 12 architecture does NOT require the system to have a concept of
+		time. I know, very shocking, but time is not needed. Some features added
+		by a release of a Plan 12 system may require a concept of time, but the 
+		Plan 12 spec does not require it, nor does the reference implimentation
+		impliment a concept of time in any way.
+
+		We like to brag about this, as Plan 12 is a time-less system.
+		Get it? The double meaning of time-less, as in stands for all time as well
+		as the literal of not having a concept of time. I am so funny.
+
+// TODO - aquire the confidence to remove this horrible joke
+
+// TODO - finish spec
+
+// TODO - write compatability requirements
+
+Tooling
+	A Plan 12 system must be fully self hosting. This is a very hard requirement.
+	All software or code for the release must be able to be 
+	compiled/assembled/stubbed on the version itself. 
+		
+	A Plan 12 system also must have an assembler for the architecture. The 
+	assembler must support all instructions used by the output code or binaries 
+	as well as the concept of labels. This assembler must be placed under the 
+	name 'ASSEMBLE' in the standard Plan 12 shell.
+
+	All releases of Plan 12 must contain some form of the Plan 12 shell and all
+	operations that can be performed by the shell.
+
+The Plan 12 Shell
+	The Plan 12 shell is a universal Plan 12 interface. It is based on a 
+	programming language first seen in a later version of vp12 5. This language 
+	is based on the concepts of stream re-direction and manipulation. The 
+	characters '/ ' indicat that the shell is ready to recieve input.
+
+	This shell follows the model of setting an input stream, setting operations 
+	to perform on said input stream, and setting an output stream. This is a 
+	native dataflow and operation language designed to express the modifcation 
+	of flowing data in a dead simple and expressive way.
+
+	The syntax follows
+		((input type marker):(input data), ordered based on appearance, 
+		comma separated) (input marker) ((operation wrappers)(operations)) 
+		(output marker) ((output type marker):(output), ordered based on appearance, 
+		comma separated)
+
+	Where input type marker being how to intepret the input stream, the input data being
+	the input stream itself, the input marker being how to merge the stream at input, the
+	the wrappers being wrappers around operations, the operations being the operations to
+	perform on the input streams, the output marker marking how to merge the streams on
+	output, the output type marker being how to intepret the output stream, and the 
+	output being where to output the stream to.
+
+	It is best to think of this language as a sequential, flowing operation, as this is 
+	how the language functions at the fundamental level.
+
+	These types must be included in the implimentation of the shell language, unless the
+	version of said operating system architecture has no concept of said item - 
+		* Type Marker
+
+			These are used to mark how to intepret the input data and how to
+			retrieve it.
+
+			fs-(fsname)   - address a file in a filesystem
+			mem-(address) - address a memory region
+			reg-(regname) - address a register
+			stream-a      - address a stream inline of ASCII
+			stream-b      - address a stream inline of binary
+			stream-d      - address a stream inline of decimal
+			stream-h      - address a stream inline of hex
+
+		Input Marker
+
+			These are used to know how to format the input streams.
+
+			<  - one input stream - merge all items listed into one single stream
+			<< - multiple input streams - merge all items listed into multiple
+			     input streams separated by the special character of choice
+			     of the implimentation
+
+		Output Marker
+
+			These are used to know how to format the output streams
+
+			>  - one output stream - merge all items listed into one single stream
+			>> - multiple output streams - merge all items listed into multiple
+			     input streams separated by the special character of choice
+			     of the implimentation
+
+		Operation Wrappers
+
+			These are used to set conditional values based on operations
+
+			SET((operation)) - sets the SET bit if the output stream is nonzero
+			IF((operation))  - only performs the operation if the SET bit is set
+			INV		 - invert the SET bit
+
+			Operations inside of SET wrappers don't effect the normal stream. They copy
+			the stream data into a new location and use this new stream instead.
+			This new stream only lasts for the duration of the wrapper. However, the
+			SET bit does last outside the duration.
+
+
+		Operations
+
+		These are actions to perform on the current data stream. All operations can
+		take a final operand of, in brackets, to mark how to chunk it before
+		perfoming the operation. Essentially, a primitive to break the data into
+		chunks before the op. If this is not specified, then it will be assumed
+		to be split into one even chunk. The chunking can be set as b for bits, B
+		for bytes, or e for even splits (as in break into N even chunks).
+
+		Basic
+			ADD(value) - Add to the current stream
+			SUB(value) - Subtract from the current stream
+			MUL(value) - multiply to the current stream
+			DIV(value) - divide from the current stream
+			
+		Logical
+			AND  - perform an AND operation
+			OR   - perform an OR operation
+			NOT  - perform a NOT operation
+			XOR  - perform a XOR operation
+			NAND - perform a NAND operation
+			NOR  - perform a NOR operation
+			XNOR - perform an XNOR operation
+
+		Shift
+			LSHFTv(value) - perform a logical left shift operation N times
+			RSHFTv(value) - perform a logical right shift operation N times
+			LSHFT	      - perform a logical left shift operation
+			RSHFT	      - perform a logical right shift operation
+
+		inc/dec
+			INC 	    - incriment stream
+			DEC 	    - decriment stream
+			INCv(value) - incriment in a loop N times
+			DECv(value) - decriment in a loop N times
+
+		Sorting
+			FIND"(type):(value)"   - find data of types supported by the * Type 
+					       Marker - set the stream to nonzero if found, zero
+					       the stream if not found
+			REMOVE"(type):(value)" - find and remove data of types supported by the *
+					       Type Marker - set the stream to nonzero if found,
+					       zero stream if not found
+			REPLACE/"(input type):(input)/(output type):(output)"
+						Find and replace data of types supported by the
+						* Type Marker
+
+// TODO - finish shell
+
+		Programs
+			EDIT     - Standard editor utility (described later)
+			ASSEMBLE - Standard assembler utility (described later)
+
+// TODO - finish programs
+
+	This language is designed to be used for standard user interfacing and interaction with 
+	a Plan 12 system. Said Plan 12 system is allowed to add as many functions to the language
+	as they wish, but the ones listed must remain. The functions may be loadable modules, 
+	builtins, or any other method the developer of said release feels fits best.
+
+	A few examples of using this could be
+		(for said examples, a few things will be assumed for simplicity - we assume this
+		version of Plan 12 used for the example has a concept of a filesystem and uses UNIX
+		filesystem paths. We will also assume said version of Plan 12 also has the concept
+		of this shell and is fully compliant with the Plan 12 spec version 2.)
+
+		
+		/ fs-examplefs:/dir/file < SET(FIND"string-d:18")IF(ADD12) > fs-examplefs:/dir/out
+
+			This program will
+				Take a file at '/dir/file' formatted under 'examplefs' format, 
+				take it as one input stream, create a new stream and set the SET
+				bit if the binary data '18' was found in the new stream, set the 
+				current stream back to the inital and discard the temporary stream,
+				check if the SET bit is set, and if so, add 12 to the current
+				stream, and finally take the current stream and output it to the
+				file path '/dir/out' formatted as filesystem format 'examplefs'.
+
+// TODO - finish examples
+
+		Although this language may seem simple, it is incredibly versatile and flexible.
+
+Compliance
+	Compliance with the Plan 12 architecture must be given approval by the creator of
+	the Plan 12 operating system, known as vantheman. Certifcation is not official, 
+	but is simply a first-party audit of the operating system in question and a 
+	response pointing out everything (if anything) not compliant with the Plan 12
+	spec.
+
+	There are 5 classes of compliance, each with varying levels of commitment to the
+	architecture.
+
+		Class 1 - compliant
+			This is the class for systems compliant fully with the architecture of
+			Plan 12 and comply with the utility standards. Operating systems in this
+			class should be able to call themseles a Plan 12 'compliant' or 'Class 1'
+			system. 
+			An example could be vp12, the reference for Plan 12.
+
+		Class 2 - architectually compliant
+			This is the class for systems complian with the architecture specifcation
+			of Plan 12, but not compliant with the utility specifcation. Operating
+			systems in this class should be able to call themselves a system based
+			on the Plan 12 architecture.
+			An example could be an embeddeed Plan 12 system without the full
+			functionality of a Class 1 system.
+
+		Class 3 - compatable
+			This is the class for systems not compliant at the base level, but are
+			compliant at a Class 1 or 2 using some sort of compatability layer. This
+			should not be a full PC emulator or hypervisor, but some userland-level
+			(if said OS has a concept of userland) compatability layer or translation
+			system.
+			An example could be if a UNIX/POSIX system added a userspace program
+			simulating a Plan 12 Class 2 system.
+
+		Class 4 - useful
+			This is the class for systems not compliant with the architecture 
+			specifcation, but do have ports of the utilities to run nativly on
+			the operating system. Essentially, they can run the utilities defined
+			by the utilities specifcation, but they are not compliant with the
+			architecture specifcation.
+			An example could be a UNIX/POSIX system with the utilities ported to
+			run nativly on the system.
+
+		Class 5 - irrelvient
+			This is the class for systems netiher compliant with the architecture
+			or utlitity specifcations. A non-Plan 12 system.
+			An example could be a UNIX/POSIX system, eg. 4.3BSD.
+
+12P
+	12P is the universal data transfer protocol of Plan 12 systems. This protocol
+	is designed to be mostly implimentation-independent, lightweight, and high in
+	performance. Just as Plan 12 is, 12P is simply a standard, and specifics of the
+	protocol are up to the version of Plan 12 to decide. 12P uses it's own filesystem
+	type, known as 12pfsf (12P FileSystem Format), simular to the vp12sdfsf (Vans Plan
+	12 Simple Disk FileSystem Format).
+
+	A 12P version string should state three values; 12P version, 12P implimentation 
+	and 12P implimentation version. This allows the software handling the transaction
+	to know if the other machine is compatable with it, and if not, how it should handle
+	the transaction.
+
+	12P is a standard data sync protocol based on broadcasting. Machines broadcast
+	data across any form of data transfer line. This means the protocol has no concept
+	of clients or hosts, but instead two or more peers sharing data and notifying the
+	other when they make a change to the data.
+
+	At startup of the 12P service handler, there should be a random 64bit binary number
+	assiagned to the machine to represent it. This number should be used to identify
+	the machine during 12P transactions, and should be known as the Machine ID.
+
+	Packets should start with a short 4-bit binary number to identify the type of the
+	packet. Yes, this is intentionally very small, as there should not be many packet
+	types in the protocol. They should contain the machine ID of the sending machine 
+	after this.
+
+	Fields not filled should be filled with zeros in the front until full.
+
+	The packets of the protocol are
+		Packet type 1
+
+			This is the packet used to figure out what machines are on the network and
+			determine compatability between machines. This packet is used to describe
+			the machine sending the packet and request other machines send packet type
+			1 over the network with the machine ID of the machine they are checking
+			compatability against if they are compatable. This allows a machine to simply
+			send a packet type of 1 over the network to get all compatable machines on
+			the network. Machines not compatable should simply ignore the packet and not
+			identify themselves.
+
+			This packet uses the packet number of 0001 (1).
+
+			32B - logical microarch name (ASCII), eg'TigerLake'
+			8B  - logical arch name (ASCII, all lowercase), eg 'amd64'
+			2b  - logical endianness name (binary number), eg 00 for big, 01 for little.
+			16B - Plan 12 implimentation name (ASCII), eg 'VP12'
+			16b - Plan 12 implimentation version (half-precision floating-point number)
+			16b - Plan 12 version (half-precision floating-point number), eg '1.1'
+			4b  - Plan 12 compliance version (binary number), eg '3' for class 3
+			16b - 12P version (half-precision floating-point number), eg '2'
+			16B - 12P implimentation name (ASCII), eg 'V12P'
+			16b - 12P implimenation version (half-precision floating-point number), eg '1.2'
+
+		Packet type 2
+
+			This is the packet used to request filesystem layouts of the system, as in
+			to allow one system to ask another, 'what are the filesystems I should be 
+			allowed to select'. This can include all filesystems on the machine or just 
+			filesystems formatted as 12pfs, as this choice is up to the implimentation.
+
+			This packet uses the packet number of 0010 (2).
+
+			First, a binary number stating the number of file systems to be given should be
+			presented. This number should be 8 bits in size.
+
+			Next, for each filesystem presented, 
+
+				32B - name of the filesystem format (ASCII) eg. '12pfs' for a 12p file system.
+				64b - size of the filesystem in bytes (binary number) eg. 32 for 512 bytes.
+				8b  - filesystem ID (randomly generated binary number), eg 118
+
+				32 ASCII return characters should mark the end of the fileystem.
+
+		Packet type 3
+
+			This is the packet to allow a machine to select a filesystem from one of the
+			presented selections.
+
+			This packet uses the packet number of 0011 (3).
+
+			This packet should only contain the filesystem ID stated in the last packet
+			of the filesystem the machine wishes to select.
+
+		Packet type 4
+
+			This is the packet used to send the filesystem data back to the machine 
+			requesting it initally. 
+
+			This packet should use the packet number of 0100 (4).
+
+			8b - filesystem ID of the selected filesystem
+			the filesystem data itself
+
+		Packet type 5
+
+			This is the packet used to sync a filesystem with another machine.
+
+			This packet should use the packet number of 0101 (5).
+
+			8b - number of linear changed blocks being sent
+
+			For every linear area changed, 
+				64b - start of logical change block (binary number)
+				64b - end of logical change block (binary number)
+				8b  - number of linear block (binary number)
+				The data in these areas
+				32 ASCII newline characters, marking the end of the area
+
+		Packet type 6
+
+			This packet is the logical acknollage, or ACK, packet of this protocol.
+
+			This packet should use the packet ID of 0110 (6).
+
+		Packet type 7
+
+			This packet means the machine sending is performing a logical acknollage
+			without acceptance. Aka, I see you, but I do not like you.
+
+			This packet should use a packet number of 0111 (7).
+
+		Packet type 8
+
+			This packet marks a generic error.
+
+			This packet uses the packet number of 1000 (8).
+
+( docs )                                                                                 ( docs )

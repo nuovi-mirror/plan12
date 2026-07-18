@@ -1,0 +1,1120 @@
+Plan 12 Implementation Vans
+variation version 5.9
+Intel Tiger Lake (IASM assembler)
+(12/04/2025 - 1/18/2026)
+
+Plan 12 - the permission-less, co-operative, deterministic, public domain operating system
+
+
+What is Vans Plan12?
+	Vans Plan 12 is a co-operative, high efficiency, ultra low overhead, permission-less and ring-less open-source
+	operating system designed 100% in Intel x86 assembler language for the Tiger Lake micro-arch using the IASM Intel
+	assembler. Plan 12 is designed for expert and technical users. The system is designed to be a modular framework
+	of explicit and deterministic processes represented entirely by files and buffers (This includes hardware and 
+	IPC, designed to be as explicit, deterministic, and flexible as possible. 
+	
+	Vans Plan 12 is designed to simplify all operations into abstracted filesystem I/O. Process management,
+	scheduling, process IPC, hardware management, and more, are all abstracted to simply function using a single
+	universal format that simplifies everything to I/O.
+
+	Variation 5.0 is the fifth major 
+	variation of the operating system. This version changed multiple macro calls, added several macro calls, 
+	overhauled the 12P protocol to be more flexible, and added a new control method for SPAWN. Programs written for
+	previous versions are... well.. technically they are compatible with 5.0, but it is not recommended that you
+	run them, as macros, such as SPAWN will not work properly due to the expected behavior changing. 
+
+	High-level overview
+
+		In Vans Plan 12, there are two types of data that represent everything. They are known as ITEMS and 
+		STATES. ITEMS are split into 4 subgroups, being processes, buffers, comms, and system states. An ITEM
+		will always be 64B in size, as to fit perfectly inside of one L1 cache line for this CPU arch.
+		A STATE will always be 3200B in size. A STATE is a piece of data used to store information on paused
+		(YIELDed) processes and how to start them again.
+
+		The system uses an abstraction to store this data known as a Virtual Memory Filesystem (MemFS). This
+		is a section of memory formatted as a filesystem specific to holding this process data known as 
+		P12VMFSF (Plan 12 Virtual Memory FileSystem Format) abstracted to appear as a physical disk to programs
+		running on the system. This allows process management and IPC to appear as standard disk\I/O operations.
+
+		Everything is designed to run in userspace. All processes are the same, and everything is a process.
+		Everything is designed to work on the idea of read buffer -> interpret buffer -> write buffer.
+		Some examples include IPC - every process communicated by creating a buffer ITEM as a comm to tell
+		one process to commit an action. Processes give each-other data by passively broadcasting it by
+		creating buffers. Hardware management is simply processes that move data from inside a buffer into/out
+		a physical data line.
+		Nothing is special, hardware is polled, and there are no interrupts. 
+
+		Vans Plan 12 implements a protocol known as 12VP. This is a universal data sync and transfer protocol
+		used to allow one system at the end of a data line to sync disk sectors with another machine without
+		knowing the data syncing, the purpose, the data line itself, or anything about the other machines. 
+		It can be used to sync disks over network, control hardware of one machine over a serial cable, and
+		just about anything you could think of. 
+
+Filesystems
+	Vans Plan 12 uses 2 native filesystem formats, being P12VMFSF and P12SDFSF (Plan 12 Virtual Memory FileSystem
+	Format and Plan 12 Simple Disk FileSystem Format to each), each holding a very specific purpose within the
+	machine. 
+
+	P12VMFSF is used to format memory filesystems to hold process data and control information.
+	P12SDFSF is used for general-purpose data storage.
+
+	
+	P12VMFSF
+		This format is used specifically to store metadata used for process and systems management. It follows
+		the format of
+		
+		[metadata]   - 64B
+			- name (ASCII)   - 12B
+			- format (ASCII) - 12B
+			- size (ASCII)   - 30B
+			- future         - 10B	
+
+		[ITEM file]  - (repeater per ITEM on disk)
+				[64B  ]  - ITEM metadata  - [info about ITEM and it's data]
+
+		[STATE file] - (repeated per STATE on disk)
+				[128B ]  - blank padding  - [marker of STATE - used to separate ITEM from STATE]
+				[3200B]  - data inside of STATE
+	P12SDFSF
+		This is a very simple filesystem - it is literally designed to be as simple as possible.
+		
+		[metadata]   - 64B
+			- name (ASCII)   - 12B
+			- format (ASCII) - 12B
+			- size (ASCII)   - 30B
+			- future         - 10B
+		[dir name]   - 32B
+		[file name]  - 32B
+		[file data]  - variable size
+		[end marker] - 64B
+
+		This format is used as a general purpoce data storage device and follows the format of
+		This format allows for single-layer directories and basic universal data storage with easily
+		parsed metadata and large file sizes
+
+STATES and ITEMS
+	Files in a MemFS are placed into two groups, being STATEs and ITEMs.
+	
+	A STATE is an 3200B piece of metadata that stores information used to CONTINUE a process that was YIELDed.
+	An ITEM is a piece of data that is used for process boot keeping or communication. 
+					
+	ITEMs
+		ITEMs are the simpler of the bunch - they are used to define processes, they allow them to communicate,
+		they allow them to send information to each-other, and they store information about the system
+		that processes frequently use. 
+
+		ITEMs are split into four groups - processes, buffers, comms, and system states.
+
+		Processes
+			Processes are simply flat machine code stored in memory with an associated process ITEM to 
+			keep track of it. They communicate by creating a comm ITEM requesting another process
+			to commit an action, they create and read/write to buffers to give other processes small 
+			pieces of information, and they read/modify system state ITEMs to mark the values of a MemFS
+
+			Each MemFS controls one single CPU core and has one process running inside of it at a time. That
+			one process holds full execution control of that core. Scheduling is fully co-operative through
+
+			Processes are assigned a permission ID as a numeric . This is used to determine what
+			processes are allowed to override another process' memory region or not.
+			Processes are assigned a process ID - a 2 digit numerical value stating the order
+			they were spawned. This data is used to refer to that process inside of the MemFS
+			A process cannot view another process inside of another MemFS without scanning all of memory.
+			AKA, the system has native process and core isolation with low overhead.
+
+			Processes follow the cycle of
+				See buffer/comm
+				Process data
+				Write to buffer/comm
+				YIELD to another process
+				REPEAT
+
+			Format
+				[2B ] - ASCII process ID
+				[1B ] - ASCII char "/"
+				[2B ] - ASCII permission ID
+				[1B ] - ASCII chars "/"
+				[12B] - ASCII process name
+				[1B ] - ASCII char "/"
+				[8B ] - start working memory
+				[1B ] - ASCII char "/"
+				[8B ] - end working memory
+				[1B ] - ASCII char "/"
+				[8B ] - process entry point
+				[19B] - blank data padding
+
+				Example - 12/17/net_manager/1000ABCD/1000ACFF/1000B000
+				(Or with full dirs) memfs01:dir:12/17/net_manager/1000ABCD/1000ACFF/1000B000
+				(In practice, processes are at base dir so there would be no dir: marker)
+
+		Comms/IPC
+			A comm file is a file used for process actions. A process will create a comm file to tell another
+			process to do something. Essentially, a process will scan for items with a similar structure to 
+			this and read their metadata. It is a form of active communication without data storage. 
+			
+			Format
+				[2B ] - ASCII sender ID
+				[1B ] - ASCII char "/"
+				[2B ] - ASCII sender permission ID
+				[1B ] - ASCII char "/"
+				[2B ] - ASCII reciever ID
+				[1B ] - ASCII char "/"
+				[2B ] - ASCII reciever permission ID
+				[1B ] - ASCII char "/"
+				[16B] - ASCII comm purpose/action
+				[36B] - blank data padding 
+				
+				Example - 12/13/18/11/get_status_net
+				(Or with full dirs) 	
+		Buffers
+			A buffer is a small file used to allow processes to give each-other small pieces of data within 
+			64B limits. This is used for passive messaging (unlike IPC, which is active messaging), small
+			data transfer, and whatever else the program may want to use them for.
+
+			Format
+				[2B ] - ASCII buffer ID [literally the same as a process ID - spawn order]
+				[1B ] - ASCII character "."
+				[8B ] - ASCII buffer purpose
+				[53B] - buffer data
+			
+			The system will show a buffer as [disk]:[dir]:(ID.[purpose])
+			An example would be memfs01:12.net_out
+			The data itself has no specific format and it is up to the processes reading and writing to determine
+			what format it uses and how to interpret it. 
+
+		System state
+			System state is a small file that gives some information used to know what system you are
+			looking at and what it is doing. This file contains the machine ID, a 2-digit ASCII set
+			designed to identify the machine over network, the controlling process, the process controlling
+			that memfs, the execution unit, being the core linked to that memfs, and the default process, being
+			the process that CONTINUE will hand off to, used for a process to end without handing off to anything
+			specific (this process is usually a shell).
+
+			Format
+				[2B] - machine ID - copied from memory address 0x00010001 to 0x00010002 into the memfs by the 
+					ADDMEM macro (the macro used to create a virtual memory filesystem of 
+					ANY FORMAT - NOT JUST P12VMFSF)
+				[2B] - controlling process - the process ID currently in control of the memfs in question.
+					Each memfs has their own set of process IDs (buffers are technically
+					processes here because they have their own process ID, but practically,
+					they are not, since they have no machine code linked to them), so 
+					when addressing by cross-memfs you must either specify the exact memory
+					sections or the memfs and process ID.
+				[2B] - execution unit - the execution unit linked to the memfs - each memfs 
+					(or at least every memfs formatted as P12VMFSF) is, by default, 
+					linked to an execution unit. The process in control of that memfs
+					will always execute only on that execution unit. It is possible for
+					a memfs to have the same execution unit as another memfs, but is not 
+					currently facilitated. To do such a thing, you would have to modify 
+					the metadata to include the memfs name and the process ID
+					of the memfs controlling ID. This variation of Plan 12 assumes the 
+					user does not need this, as Tiger Lake CPUs always have at least 4 
+					execution cores. You can have processes write to null values by 
+					leaving this blank, forcing the process to feed into nothing. 
+					KEEP IN MIND - THIS IS UNDEFINED BEHAVIOR - I am pretty sure 
+					this will feed into a blank pipe, but I am unsure. There it 
+					a reasonable chance this will crash the process.
+			
+				[2B] - default process ID - This is the default process to hand over execution to. 
+				It is used for -
+					a process that needs to end execution without any remaining jobs. Since
+					this operating system must always be in a state of execution, this process
+					is the default end process for a program to hand off to when it's life
+					cycle is over. The CONTINUE (explained later) YIELDs (also explained later)
+					to this program
+
+				[2B] - architecture ID - This is a small ID used to identify the system architecture 
+				used for 12P. This is just a small 2-digit ASCII string associated with the 
+				microarchitecture of the system. This will allow one system to easily know 
+				the architecture of another. Since this system is designed for the Tiger 
+				Lake GenuineIntel arch, the only ID is 01. This is just added to allow other 
+				Plan 12 systems to interface with Vans 12P if they wish to. The database for
+				architecture IDs is stored in memfs02:sysinfo/archid. This file is generally
+				copied here by the bootstrap (see Bootstrap for more info).
+		
+		Process STATEs
+			Process states are small snapshots of the registers processes used to be entered again.
+			This should be very simple - all it does is such
+Macros
+	The computing distribution known as Vans Plan 12 uses a small system of macros under the
+	macro language P12UMSL (PLan 12 Universal Macro Substitution Language). The language is 
+	a small text substitution syntax designed around the assembler language. In reality, 
+	since it is simple text definition and substitution, it can work for any string of data. 
+	However, in practice, it is only really used with common assembler language expansion. 
+	Vans Plan 12 uses macros to expand into native assembler language for process scheduling, 
+	optimization, and general repetitive tasks. The main macro definition file (glb.macro) is 
+	held within the bootstrap binary itself and copied over to the file memfs02:/macro/glb.macro 
+	(see the Bootstrap section for more information). The system comes with a utility known as 
+	EXPAND (placed in memfs02:/VP12EF/EXPAND by bootstrap) used to expand macros from source 
+	files into expanded code. The utility takes two arguments. Argument one being the 
+	file where all macros used are defined, and the second file being the source program 
+	where macros are called. For more information on the EXPAND utility, see the Utilities 
+	section of documentation.
+
+	The macro syntax follows a few simple primitives - everything inside of a definition 
+	statement can be added in place of the associated call statement.
+		
+		#DEFINE,(name)       - defines macro
+		@CALL,(name),[ARGS]  - calls macro
+		%ARG[argname]	     - sets argument to location
+		&ENDSEC,(name)       - ends definition statement
+		
+	Everything inbetween a define statement and an endsec statement will replace 
+	everything with stating call of the same name.
+
+		Example -
+			defining file
+				#DEFINE,item
+				    MOV RAX, %ARG1
+				&ENDSEC,item
+			calling file
+				@CALL,item,10
+			command
+				EXPAND (defining_file) (calling file)
+
+		This will replace the line '@CALL,item,10' in the calling file with the line 
+		'MOV RAX, 10'. The language is designed to be as simple as possible.
+	
+	memfs02:/macro/glb.macro
+		This is the macro file (this file is optional - it is only required if 
+		the system will be building assembler language programs from source code) 
+		that defines basic system functions like process scheduling. The file is 
+		a small ASCII text file copied to memfs02:/macro/glb.macro by the bootstrap
+		code from the boot binary (see the Bootstrap section
+		for more detail). This file defines the macros
+		
+			SPAWN (name) (memfs) (permission) (executable) (start memory) (end memory) (entry)
+				SPAWN is the macro used to spawn a raw machine code binary into a process. 
+				If said binary is not formatted as VP12EF (also known as Vans 
+				Plan 12 Executable Format), then the program would use this macro 
+				to execute said flat machine code binary.
+					Name       - name of process to be spawned
+					MemFS      - MemFS to spawn said process in
+					Executable - location of the binary for said program
+					Permission - permission to give the new process
+					start      - Start memory location to give said process
+					end 	   - End memory location to give said process
+					entry	   - Memory entry for said process
+				
+				Example = @CALL,SPAWN,user_shell,memfs01,3,memfs02:/VP12EF/shell,0x0008000,0x0008025,0x0008002
+				This example will
+					Check if these memory sections are already allocated by scanning 
+					all memfs process metadata
+						- if it is already allocated it performs a permission check		
+
+							- if the process currently being spawned has a 
+							lower permission than the ones in control of that 
+							memory region, SPAWN will call KILL on the processes 
+							and continue the SPAWN protocol.
+							- else, SPAWN will simply exit and not spawn said program. 
+					Zero out said memory ranges
+					Find the process ID (greatest ID in said memFS +1))
+					create a memFS entry with the associated metadata
+					copy the metadata of the process to the first location 
+					of the start memory address the process specifies.					
+
+				Now, said process is spawned and ready to be executed.
+				
+			SPAWND (name) (memfs) (permission) (executable)
+				SPAWND is the same as SPAWN, besides the fact that SPAWND 
+				assumes the metadata for the missing args exists. The most 
+				common case for this would be if the binary follows VP12EF, 
+				and the data asked in the missing args is stored in the binary 
+				metadata. See 'Supported executable formats' for more 
+				information of VP12EF. 
+				
+			START (id) (memfs)
+				START is the macro used to begin execution of a process 
+				that has not previously started. It will simply read the 
+				metadata of said process, update the system state to show 
+				what process is currently in control, and begin execution 
+				of that process from the entry point stated in said process's 
+				metadata. NOTE - SYSTEM STATE IS ALWAYS UPDATED LAST
+
+				The reason this macro exists is so SPAWN can set up 
+				multiple processes in series before starting their 
+				execution. This allows for round-robin like chains 
+				as well as processes that need to be allocated but 
+				not yet spawned. This macro used to be embedded into 
+				SPAWN, executing the code as soon as SPAWN is called. 
+				The addition of this macro adds a lot of flexibility 
+				into the system.
+
+				The cycle would essentially go
+					SPAWN process
+					YIELD running process
+					START SPAWNed process
+
+			YIELD (id) (memfs)
+				YIELD is used to stop a running process. It will essentially 
+				save the process information by creating a process state for 
+				it and prepare for execution of another process. It is used 
+				to hand execution to another process.
+					- Running process calls YIELD
+					- This will create a process state for said process
+					- and hand off control to the process specified by ID.
+					
+				Ordering
+					- Scans process metadata
+					- Creates a process state for the process calling YIELD
+					- hands control off to another process (specified by ID
+					and MEMFS args)
+
+				WARNING - DO  - NOT-  HAVE A PROCESS YIELD A PROCESS INSIDE OF 
+				A DIFFERENT MEMFS - THIS WILL CAUSE UNDEFINED BEHAVIOR
+							(I mean you can if you want - nothing is stopping you)
+				Refer to the documentation for PROCESS STATEs for more information on this macro.
+
+			SAVE (id) (memfs)
+				This macro is used to create a process state without executing 
+				another process - essentially it will save process data without 
+				stopping the process. This is essentially creating a "snapshot" 
+				of said process, just without the memory the process uses. 
+				This is very useful for debugging. The reason why YIELD does 
+				not just execute one of these states is simply 
+				because there would be no one to call a starting macro. By say, 
+				the YIELD macro is used to end execution of one process and 
+				start another, so if you split that into two parts, there 
+				would be no process to call the second macro. This is why YIELD exists.
+					This macro will
+						- create a process state for the specified process
+							- nothing else - it just continues execution.
+
+			CONTINUE (memfs)
+				This process is essentially just YIELD, but instead of handing off 
+				to the specified process, it will hand off to the default process 
+				mentioned in the system state information.
+
+			KILL (id) (memfs)
+				This macro is used to KILL a process - running or not.
+				This process will check the process metadata
+				to see the memory locations and zero them out. It will 
+				then remove the process metadata for said process.
+			        This macro does not execute anything after it ends, so 
+				please do not kill running processes. Please YIELD
+				or stop a process, then KILL it. If you KILL a process that 
+				holds control, then you will need to SPAWN a 
+				process from a user shell on another memfs, as that memfs 
+				will be left without a controlling process.
+			
+			FALL (memfs)
+				This macro will calculate the lowest process ID in said 
+				memfs and YIELD to it. It is that simple.
+
+			
+		Other Macros
+			MOVE (source) (dest)
+				This is a general-purpose high-efficiency data movement macro. This 
+				macro is used to split large chunks of data in a highly efficient
+				way, while not leaving the L1 cache. 
+				This macro will
+					- make source
+					- create a data pointer and set it to the last 64B of source
+					- take the data mentioned at the data pointer and incriment 
+					the data pointer by 64 
+						- repeat last line 4 times total to get 4 64B chunks
+					- send all 64B chunks to the dest
+					- wait 2 cycles to allow the system some breathing room (lol)
+					- clear data registers
+					- repeat until there is no more data in source
+				This data movement macro is designed to move lots of data very 
+				quickly without leaving the L1 cache. 
+				This macro is very important and is used for ALL DATA MOVEMENT of THE SYSTEM
+	
+			ADDMEM (start) (end) (name) (format) (core) (default id)
+				This is the macro used to create a virtual memory filesystem of any filesystem format.
+				It will zero out the memory locations (DOES NOT CHECK IF THEY ARE ALREADY IN USE)
+				Format the memory regions 	
+				Create the system state for that memfs (ONLY IF IT IS P12VMFSF)
+					- copy the machine ID from memory (see Bootstrap for more information)
+					- copy the architecture ID from memory (see Bootstrap for more information)
+					- set the default ID and core
+					- leave out the current running process (since there is not one yet)
+					- set the default ID
+					- initalize the core and run looping code on 
+						this core until the default process is made
+					- move the current memfs name (ascii string) to RAX 
+
+
+				exit (this macro is fairly simple)
+				
+				Keep in mind this does mean RAX is not to be used by programs.
+
+			PARSESTATE (name) (memfs)
+				This will parse the STATE file in a P12VMFSF and output the location of the file as
+				R8 and path as R9. If the file being searched for does not exist, it is created at 
+				the next free block on the filesystem. 
+				It wil- well this should be pretty self-explanitory.
+
+			PARSEITEM (name) (memfs)
+				Exactly the same as PARSESTATE, but with an ITEM.
+
+			INCASCII (location)
+				This will incriment an ASCII value by 1.
+				Location - location in memory of ASCII value
+			
+			DECASCII (location)
+				Same as INCASCII but decrimenting
+
+Software
+	Vans Plan 12 has a small set of versatile software 
+	written in VP12EF. Every single piece of software, code, 
+	and documentation associated with Vans Plan 12 and Plan 
+	12 is 100% free and public domain. This is also true for 
+	items not within that range but still packaged with the 
+	system (such as logos and technical tips). This is a major
+	point of this operating system - to be 100% free, open, 
+	and public domain.
+		
+	The system has a few basic utilities included. These are
+		EDIT - the basic visual editor program, supporting ASCII and hexodecimal formats.
+			Syntax - EDIT {ASCII|HEX} (file)
+				ASCII - edits file with ASCII encoding
+				HEX   - edits file with hexidecimal encoding
+			This program is simply a small vi-like visual editor program. 
+			It is very barebones - it  just creates a file named (file).edt
+			in the directory of the file behind edited. Most vi commands are 
+			entact, but some are not. 
+				: - command interface
+				w - write file
+				q - exit
+
+				MODES
+					command - CTRL + c
+					Edit    - CTRL + c + i
+
+			That is it. The editor is very simple, but it gets the job done	
+		MOVE - the general file movement utility
+			Syntax - MOVE {REMOVE|(source)} (dest)
+				REMOVE - remove file at (dest)			
+
+			MOVE is just a utility wrapper around the MOVE 
+			macro. It will copy data from one location to 
+			another. If arg1 is set as REOMVE, it will delete 
+			the data at arg2. If not, it copies arg1 to arg2. 
+			This is a file movement and copy utility. 
+		
+		ASSEMBLE - basic flat machine code assembler using IASM syntax (produces flat machine code)
+			Syntax - ASSEMBLE (input)	
+			
+			This is a basic flat machine code assembler written for
+			Vans Plan 12 based on the IASM assembler. It is a basic text
+			substutution assembler that only produces flat machine 
+			code binaries. It will always place the output to the dir the
+			input is in at the file name ASMBL.out
+	
+		FORMAT - disk format utility (formats a disk)
+			Syntax - FORMAT {P12SDFSF|P12VMFSF} {MEM|BUF} {(startmem,endmem)|(buffer)}
+				arg1 - format
+				arg2 - disk or memory
+					BUF - disk buffer
+					MEM - memory start/end
+				arg3 - what to format
+					if BUF - buffer file
+					if MEM - start,end memory
+			
+			This utility will write all blanks to the disk buffer to 
+			clear it, then format it to the desired filesystem. 	
+			If the MEM option is specified, the system formats the 
+			start and end memory locations. If the BUF is specified,
+			it will format the disk buffer.
+
+		MAKE - binary conversion tool
+			Syntax - MAKE (source) (startmem) (endmem) (entry)	
+			This utility will convert a flat machine code binary into 
+			VP12EF. The source must be a flat machine code binary.
+			This utility will always write to MKE.out as a complete VP12EF binary. 
+			It uses the data in the arguments to set the metadata for the file.
+		
+		EXPAND - macro expansion tool
+			Syntax - EXPAND (source) (macro file)
+			
+			This utility will expand all macros in the source arg and 
+			replace them with the associated macro in the macro file arg.
+			This utility is just a text substitution tool. This tool 
+			expects assembler source code as arg1 and a macro definition text
+			file (ASCII) as arg2. This tool will always place output at EXPND.out.
+
+		SHELL - basic command line interpretation program
+			This really should not need explanation - all it does is execute 
+			command line arguments.
+			The command RUN will run a program
+				RUN (path to program)
+				Example - > RUN memfs02:VP12EF:MOVE disk1:file disk2:dir:file.pout	
+			There is no universal 'quit' like on UNIX. Why would you need 
+			one? Just allow the running program to terminate itself.
+			That is it. The shell prints the characters '> ' as a prompt 
+			and waits for an associated value. 
+			As of 5.0, RUN is the only valid value, and I currently do not 
+			see a reason to add more. The only reason this is a value
+			in the first place is to allow the system to remain explicit. 
+			Print '> ' when ready and get values.
+
+the 12P protocol
+	The 12P protocol is an example of how a simple system can diverge to 
+	allow a complex issue to be solved using simple primitives. The 12P protocol
+	allows for method-independent universal sector-level data transfer and disk sync. 
+	As long as the machine has a machine ID and it is connected via any data 
+	line that allows both systems to communicate, this protocol can work. 
+
+	The protocol is designed to allow one system to share and sync a 
+	portion of their disk with another across a data line without the 
+	system knowing what the data is, the data line in question, or 
+	anything about the machine in question besides the machine ID. 
+	The system simply messages the end of the data line and asks the 
+	machine some questions to know how to send said data.
+
+	Now this is the point in the documentation where the system begins to get very 
+	technical. This, as well as the bootstrap sections, will be
+	the most important sections, as they show real implementation.
+
+
+	12P is a protocol used to sync sectors of memory across multiple remote machines 
+	without having any information on the other machines in the chain. 
+	This protocol works over any two-way data line.
+
+		Machine A sends request packets down data line, requesting all machines to 
+		reply with their machine ID, OS version and 12P version. Machine A receives 
+		this information and asks a specific machine (by their machine ID) for 
+		metadata of their disk (start/end sectors and their metadata for every 
+		partition). Machine A then asks for a specific start and end disk sector 
+		from said machine to be synced. Machine A copies this data to a location 
+		(usually memory - can be any location) and mounts it as a memFS of that 
+		same format
+
+		When ever a system makes a write to that disk, a special manager managing 
+		this will send a packet across the machine sending the updated sectors
+		and the new data to place into these sectors. 
+
+	You may ask, what if multiple machines write to the same sectors at the same time? The 
+	updating is order-oriented, so you will receive the update and be prompted by a shell 
+	asking if you want to write or not write said data. Simply don't allow your copy to become 
+	invalid. If you are writing data as they are sending, simply give a new output location 
+	(write prompt specifies out location) and analyze the data and make your changes. 
+
+	This protocol is designed to work with only memory locations. Older versions of 12P allow for both memory and
+	disk, but as of the change made in 5.6 removing disk filesystem abstractions, disks are no longer consitored
+	'first-class' entities. I would rather not support something instead of having poor support for it.
+
+
+	12P follows a numeric version scheme using 8 bytes total. The version documented here, 
+	being 01.00/00 The first two numbers display the major version - second two display the 
+	minor version - third the architecture ID.
+		For more information on the Arch ID, see Bootstrap, Filesystems, and ITEMs. 	
+		
+	AKA, for a 5.6 Vans Plan 12 system, the data will always be 01.00/01
+			01.00 is the current 12P version and 01 is the arch ID for GenuineIntel Tiger Lake
+	
+		Packet formats
+			The first packet will always be a packet sent from one machine to the 
+			data line itself. This packet is used to tell other machines
+			to identify themselves and request metadata on the machine itself.
+			This packet is formatted as such
+				[2B ] - marker
+				[2B ] - machine ID
+				[8B ] - 12P version 
+				[38B] - blank padding
+
+					The marker is a piece of data used to signify that the 
+					packet is used for 12P
+					The string will ALWAYS be 0000 0000 1101 0011 - this 
+					string is used to identify 12P packets.
+						AKA, for a standard 5.0.0 system on 12P 01.00 
+						on Vans Plan 12 with a machine ID of A8
+						The packet would be
+							0000 0000 1101 0001
+							0100 0001 0011 1000
+							0011 0000 0011 0001 0010 1110 0011 
+								0000 0011 0000 0010 1111 0011 0000 0011 0001
+							[38 blank bytes]
+
+						The first 16B conveys this is a 12P packet -
+						the next 2B convey the machine ID in ASCII - the next 8B convey
+						the arch and version of 12P in ASCII and the
+						rest is blank.
+
+			Next, every machine at the other end of said line will send a return packet 
+			with the same format down the other end of the data line to that
+			machine sending.
+				The only difference is that the marker, unlike the sender being a 
+				first stage request packet, this is a first stage sender packet.
+				The marker would be 0001 1001 0011 1001 - this shows it is a 
+				reply to the first packet sent. 
+
+				The machine sends their machine ID, their 12P version and this
+				string in the same format as the last packet.
+
+			Next, the same machine that sent the first packet will send a packet to 
+			the machine it wants to request data from. The format for this packet
+			goes
+				[2B ] - marker
+				[2B ] - machine ID sender
+				[2B ] - machine ID receiver
+				[58B] - padding
+					The marker for this packet type is 0000 0010 1101 1100
+					This packet is used to request metadata information from one 
+					machine to be sent to another. This data includes the
+						- metadata for each sector or filesystem on the 
+						location specified by bytes 6 to 7.
+						- the start and end sectors for each partition 
+						(or memory if the item is 02)
+					This packet in reference is used to allow the first system 
+					to know what is where and what they want to sync. 
+						The format of said packet goes
+							[2B  ] - marker [0010 1101 1101 0010]
+							(for every partition)
+								[metadata]
+								[start sector] (or memory)
+								[end sector]   (or memory)
+								[64B blank]
+							[128B] - blank marker
+
+						This packet is used to give the first system 
+						the information they need to know what would be where.
+						One of these packets is sent for every disk on said machine.
+
+					The machine will then send a packet that is used to 
+					request specific sectors of the disk to be synced. 
+
+					This packet follows the format
+						[2B ] - marker [0010 1101 1111 1101]
+						[2B ] - machine ID sending to
+						[2B ] - machine ID sender
+						[start location]
+						[end location]
+						[data itself]
+						[64B end data marker - blank]
+					The machine will then copy this data to memory and 
+					mount it as a memfs. A file named memfs02:12P.tbl keeps track of 
+					the associated memfs to their sector IDs and the 
+					machine ID of the machine that send the data and the machine ID
+					of the current machine.
+					The other machine also does the same.
+
+						Any time a machine writes to this data, a 
+						process will broadcast the last item in the same format, just
+						with the marker 0010 1101 1101 1111. This 
+						allows for all machines to keep a copy of the data.
+						All syncs are managed in the same way as any 
+						other process trying to send data to a data line.
+
+			The tables for marker mappings is stored at memfs02:tables:12Pmap
+
+
+	And there it is. The 12P protocol. 
+
+		This protocol is an example of how a simple system allows for complex issues to be 
+		solved in a simple way. 12P allows for universal
+		data transfer to any Plan 12 system that supports Vans 12P across a bidirectional 
+		data line.
+
+
+Hardware management
+	Hardware is managed by a small set of normal processes. By bootstrap, these are mapped to memfs03.
+	Hardware is managed by what is known as a hardware manager process. This process generally 
+	has an in and out buffer. Whatever data is inside of said out buffer(s)
+	is simply sent to the data line as-is.
+
+		In memfs03 you would have a generic hardware manager - this process is used to 
+		convert generic hardware names to specific hardware names based on the hardware 
+		lookup table copied to memfs02:tables:hrdwrtbl - this file is a translation file that 
+		converts generic hardware names to specific names
+		(eg. DISPLAY to VESA). 
+			A program that would need to, say, display text, would write to the 
+			DISPLAY.out (memfs03:(00).display.out)						
+			The hardware manager will then parse the lookup table - try to 
+			find the line display.out - it will then copy whatever data is in that
+			buffer to the associated buffer in the mapping file.
+			The hardware manager for that item will then broadcast that data 
+			to the correct data port (the port itself is baked into the binary).
+
+			This allows for programs to not know the specific hardware.
+				There is a generic buffer in every memfs that the program of 
+				that memfs writes to and a generic manager specific to each memfs.
+				The memfs generic writes to memfs03:(), where the manager for 
+				that memfs writes to the specific buffer. This also allows for programs
+				to not need to leave their memfs.
+
+			program - writes to generic buffer of their memfs
+			mapper  - copies said data to memfs03:(buffer)
+			mapper2 - copies the data in memfs03:(buffer) to the associated 
+			hardware manager buffer by parsing the mapper table (memfs02:tbl.map)
+			the hardware manager for that specific data line broadcasts the data.
+	
+		It is that simple.
+
+	Also, hardware uses its own scheduler. As stated, the primitives provided allow the 
+	system to create any scheduler. Memfs03 uses a round-robin scheduler. 
+	It does this by having every process work on a system like this
+		- when given control
+			- check if work needs to be done (check buffers and comms)
+				- if none, hand to current ID + 1
+				- if work, do work
+				- hand to current ID + 1
+		
+		At the end of the chain there is a dummy process that calls FALL to restart the chain 
+		whenever it gets control.
+
+		As shown fully by this, the scheduler primitives allow the system to use any 
+		kind of scheduling. Actually, this is the entire point of the memfs system - they 
+		are not designed for process isolation, but scheduler isolation. Each memfs is 
+		linked to one execution unit (a core or a thread of a machine ID), allowing each 
+		execution unit to use it's own scheduler depending on what the memfs may require.
+		This is a major design point of this system. A scheduler is just a primitive that allows
+		processes to manage how they want to be scheduled. 
+
+	Please note that disks do not allow for standard filesystem abstraction, instead expose sector I/O
+	via the hardware manager's buffers.
+	Disks will have a hardware manage program with an input buffer and output buffer. This buffer is used to 
+	give the manager commands. 
+
+	When a process needs to commit an action, it will write the action as a comm file to request the disk manager 
+	to make an action. This is basically sending a command to the item.
+
+	The protocol to read a disk will go
+
+		Process needs to read disk
+			Process writes sectors it needs to the disk manager buffer
+				Format of (ASCII) '(action)/(ar1).(arg2).(arg3)'
+					Action tells what to do with the data
+							Actions include 'read' to copy sectors of disk to memory
+									'write' to copy the sections of memory to sectors
+
+									For a read, arg1 represents the start sector, arg2 
+										    represents the end sector, and arg3
+										    represents the memory location to copy to
+
+									For a write, arg1 represents the start memory where the 
+										     data is, arg2 represents the end memory where
+										     the data is, and arg3 represents the start 
+										     sector to copy to 
+
+			Process creates a comm file to the disk manager to tell it to read it's input buffer
+				Format with a name (desc/purpose) of 'read_input'
+			Process waits until it finds a comm stating it is done
+
+			Disk manager sees comm file 
+			Disk manager reads it's input buffer 
+			Disk manager reads said sectors and copies it to the memory location specified
+			Disk manager creates a comm file with the text '(action)_done' (here it would be 'read_done')
+
+			Process sees comm file stating it is complete - the raw sectors of the disk have been displayed.
+
+
+		If the process also needs to read a filesystem on the disk, they will send a request to the filesystm parser program. This
+		is a program that can understand a single fileystem. The program is pointed to raw disk sectors in memory and will output
+		a structure of directories and files based on that data. It will parse the filesystem metadata to output information such as
+		name, permission (if included), date (if included), and most importantly, it will state the location on disk (the start/end sectors)
+		of each file and dir and it's metadata. This is used to know what files are where and what data they may hold. Keep in mind the
+		parser does not show the data in each file, just the location where the data is plus the parsed metadata. 
+		Every filesystem parser works a little differently due to differences in filesystems. The only one that is known to be 'standard' 
+		is the filesystem parser for P12SDFSF. This parser expects such items as it's format
+
+		An input buffer with needed data
+		a comm stating to commit an action
+
+		The input buffer should be formatted as such
+			(filesystem)/(start mem).(end mem).(output mem)
+
+			The filesystem type tells the disk parser the type of filesystem used. This is generally only P12SDFSF, but was included for
+			future flexibility. 
+			The start mem is the start memory location of the filesystem data
+			The end mem is the end memory location of the filesystem data
+			The output mem is the start memory location to write the parsed data to
+
+		The comm file is expected to simply state 'read_input'
+		The comm file to show completion is simply 'parse_complete'
+
+		The format for the output data goes
+
+			(for every item on disk)
+				dirname it is in
+				file name
+				file sector location (start)
+				file sector location (end)
+				(padding to nearest (rounded up) multiple of 64 if not already)
+
+		The sizes of each item depends on the filesystem type itself
+
+		This program is used for processes to parse filesystem information.
+
+
+
+	Anyways, I am sure you can guess what reading data would be.
+
+
+Bootstrap
+	This section will explain the bootstrap process of the system. The bootstrap is a small section 
+	of the code from the main distribution binary. The point of this code is to set up the basic 
+	execution environment used by all programs that will run after it. The bootstrap is not, in itself,
+	a process. It is the only item in this system that is not represented. This is because it is used 
+	to set up the environment used to allow all of the cool stuff this operating system can do.
+
+	The purpose of the bootstrap code is to set up basic hardware options, set up hardware manager processes, 
+	set up execution, and hand control to the user. The bootstrap will disable non-required services, like
+	interrupts, before executing. 
+
+	The bootstrap is split into six stages. These are simply named 'Stage 0' to 'Stage 5' (A bootstrap
+	does not need special naming for stages).
+
+	
+
+	Stage 0 - initialization
+		This is the phase where the system is no longer bare metal UEFI and is now Plan 12. This is
+		the hand-off phase, where control is shifted from UEFI to the operating system. Some basic
+		unused features are disabled here. These include hardware interrupts (disabled later) and 
+		just about every EFI service
+
+	Stage 1 - setup
+		This is the phase where basic hardware is enabled. This stage depends entirely on what is 
+		pre-programmed, but it usually consists of PS/2 keyboard, serial, and sometimes display.
+		Sometimes this step is skipped over completely, as it is not needed, and hardware would later
+		be managed by just the hardware managers to come about later. This is very common in headless
+		or expert user setups. This, however, does make debugging nearly impossible. If you wish to
+		go this route, please, be careful and confident.
+
+	Stage 2 - mapping
+		This is the stage where memory is set up. This stage will zero out all pre-programmed memory 
+		ranges (just in-case) and use the ADDMEM macro to allocate the correct memfs containers.
+
+		        First, the machine ID is created - this is a random 2 character English ASCII ID
+                        that is unique to this machine at this boot. 
+			- 	(UNLESS SPECIFIED IN EXTRA DATA - SEE 'Extra data' FOR MORE INFO)	 -
+			It is used for the 12P protocol to 
+                        execute instructions on different machines. Without it, if you mounted one disk
+                        as a memfs via 12P and started a process, said process would start on both machines.
+                        This ID is stored at physical location 0x00010001 to 0x00010002 and copied to 
+			memfs02:tables:machine.id
+			The arch ID (more info in 12P and Extra data) is copied to memfs02:tables:arch.id in stage 5.
+
+                                - 0x20000000 to 0x20200000 (2MB ) - MemFS01 region
+                                - 0x20200000 to 0x20400000 (2MB ) - MemFS02 region
+                                - 0x20400000 to 0x20800000 (4MB ) - MemFS03 region
+				- 0x20800000 to 0x23600000 (48MB) - MemFS04 region
+
+                        The ADDMEM macro is used here to allocate the memory filesystems - syntax is 
+
+                                @CALL,ADDMEM,0x20000000,0x20200000,memfs01,p12vmfsf,1,1
+                                @CALL,ADDMEM,0x20200000,0x20400000,memfs02,p12vmfsf,1,1 
+                                @CALL,ADDMEM,0x20400000,0x20600000,memfs03,p12vmfsf,2,2
+				@CALL,ADDMEM,0x20800000,0x23600000,memfs04,p12sdfsf
+
+		Keep in mind these memory ranges are not strict - this is just the default amount
+		for a standard desktop system. The regions can be much lower than this (few KB), but this is
+		the default allocation. This allocation is very generous in range allocation.
+
+		The 'working space' section is a P12SDFSF MemFS used as a 'disk'. It is used for output items
+		for most programs. The default ammount for this is 48MB, as that is how much I (the average user)
+		would be using. If this is not enough for you, modify the bootstrap to create a larger one or
+		create one after boot.
+
+		The reason the system never allocates core 0 is because this core must run the code to disable
+		interupts at the end of bootstrap. If this core was allocated, nothing would be able to do this.
+		No, I would like for this not to be a process.
+		So far, I am unsure about how to resolve this issue, so the architecture currently cannot use 
+		core 0 unless sceduled manually by a bare metal application. The bootstrap only allocates cores
+		1 and 2 for now, leaving 0 and 3 (0 at HALT and 3 never started) unallocated and unused. Core 
+		3 can be allocated during bootstrap, but I have not done this becuase I have no personal reason
+		to at this moment. 
+		Anyways, I would rather core 0 be unused than it be initalized in a different manner than cores 1-3.
+
+	Stage 3 - setup
+		This is the phase where programs are placed in the correct place. memfs02 is a location used to store
+		programs. The bootstrap binary stores a small disk image of the Plan 12 simple disk file system format
+		on the binary - this image contains binaries for the base set of programs. 
+		The process goes
+			- Search the boot binary (wherever UEFI decides to copy it to lol)
+			- Find the first 64B blank marker
+			- Copy everything from that 64B blank marker to the 128B blank marker (the disk image)
+		It is really that simple. Just a small parse and call of the MOVE macro.
+		This binary has a layout like this
+			memfs02:
+				- hardware:
+					- all hardware manager programs
+				- VP12EF:
+					- user programs formatted as VP12EF (most)
+				- flat:
+					- user programs written in flat machine code
+
+			example - memfs02:VP12EF:shell
+
+
+	Stage 4 - hardware spawning
+		This is the stage where hardware managers and chains are organized and started. 
+		Every item in memfs02:hardware is named by (order).(name) and formatted as VP12EF.
+		The bootstrap will SPAWND to each item in this folder (this includes the round-robin FALL loop process)
+		and then START on the first ID. 
+		This allows for hardware to be fully managed and set up. This is the phase where the system is 
+		cons Plan 12 and no longer bootstrap.
+
+	Stage 5 - Exit
+		This is the stage where the bootstrap exits. The bootstrap will clear the data in it's tmp space 
+		The arch ID (more info in 12P and Extra data) is copied to memfs02:tables:arch.id. 
+		Finally, the system will execute
+			
+			@CALL,SPAWND,shell,1,memfs02:VP12EF:shell
+
+		This - right here - marks the end of the bootstrap.
+		The bootstrap has officially exited and the system is now fully 100% Vans Plan 12.
+
+		
+		The reason interupts are disabled at exit is because the ADDMEM macro enables the core. This means
+		all cores holding processes must be started at bootstrap. A memfs can be created after, but cannot
+		run code.		
+
+	That is the bootstrap process. It is very simple and designed to be able to be implemented in less than
+	300 lines of code.
+
+	The format for the bootstrap binary goes
+		[first section ] - Bootstrap code itself    - variable size
+		[second section] - blank marker             - 64B
+		[third section ] - memfs02 image (P12SDFSF) - variable size
+		[fourth section] - extra data               - 64B
+
+	Extra data 
+		The extra data refers to some small pre-set information.
+
+		The format for this goes
+		[2B] - machine ID - if 00, generate at boot. Else, the data here will be the machine ID.
+		[2B] - arch ID    - this 2 char system is explained in 12P and is used to identify system arch.
+
+
+
+
+Supported executable binary formats
+	This system supports two formats - 
+		Native VP12EF (Vans Plan 12 Executable Format) and flat, static machine code.
+		VP12EF is a format designed to make SPAWND easy. It is very self-explanatory.
+
+
+	Item 1 - metadata
+        [0-7B]   - start memory location
+        [8-15B]  - end memory location
+        [16-23B] - memory entry point
+        - this item is scanned by SPAWN to get the information mentioned previously.
+
+        Item 2 - debug (OPTIONAL)
+        - this is repeated per macro
+        [0-15B]  - macro name
+        [16-21B] - instruction macro takes place at (number)
+        [22-63B] - padding
+        - this data is used for debugging to know what and where the macros of the binary are
+
+        Item 3 - blank
+        [0-63B]  - blank 
+        - this item marks the end of the metadata
+
+        Item 4 - code
+        - this section is just flat machine code
+
+        Overhead - 128B minimum
+        Plus 64B optional per macro for debugging
+
+	This is how VP12EF works. Very simple
+
+
+Usage
+	This section is optional depending on the user. The average user should most read this. This section
+	will explain how to properly use a Vans Plan 12 system. This can be ignored if the system is implemented 
+	in an embedded environment without a human present. 
+
+	Shell 
+		This is the common user interface utility. This utility provides basic macro substitution from the
+		memfs02:tables:shell.cmd. Everything written in this file is included into the shell as an extra option.
+		The defaults for this include RUN as an expansion for SPAWND and PRINT as an expansion for a longer macro.
+		PRINT was not specified in the utilities section, as it is not normally used. PRINT is a long macro chain 
+		used to display text onto a screen at user command. The PRINT item simply moves the PRINT data into
+		the buffer (memfs):(id).printout. This buffer is used to store data commanded by the PRINT command that is
+		going to be printed to the display.
+
+		The shell uses the $ARG tag to supply shell arguments provided as simple text substitution.
+		The shell also uses a file in memfs02:tables:shell.args to define global arguments. 
+		The syntax for this file goes
+			[name]:[value]
+		
+			Example -
+			CURRENT_MEMFS:memfs02
+			CURRENT_ID:1
+
+		CURRENT_MEMFS - the memfs the shell is spawned in.
+		CURRENT_ID - the ID of the current shell
+
+		Keep in mind - none of these are set by default. These are only set by the spawner of the shell.
+		These are set as a global item by the bootstrap, as the system is expected to only have one shel.
+
+		Arguments are ended by the char "|"
+		After this char, the shell will know "the next statement is not part of an argument"
+		This is optional and is only to be used if part of a single line is to be used as an argument.
+
+		The syntax for said definition file simply goes
+			[name]:[expansion]
+
+			Example -
+			RUN:@CALL,SPAWND,$1,$2,$3,$4
+			PRINT:@CALL,MOVE,$1,$CURRENT_MEMFS|$CURRENT_ID|.printout
+
+		These items are used to expand the shell commands RUN and PRINT.
+		PRINT will have the shell call the MOVE macro to move data from input to the display.
+		RUN is used to expand into assembler and spawn a process.
+
+
+		PRINT is a bit more complex. The associated buffer for the printing was added to the shell 
+		for this purpose only.
+		This buffer is really just a midway point for data about to be moved to the display by the shell.
+		It is only used for data from the PRINT command. For anything else, the generic shell.out buffer
+		is used.
+
+		The workflow goes
+
+		shell.input -> MOVE (shell) -> shell.print -> MOVE (shell print manager) -> display generic -> 
+		MOVE (hardware allocator) -> specific display -> MOVE (hardware manager for display) -> data line 
+		-> screen buffer (memory - depends on screen type)
+
+		The chain allows for any step to be replaced or modified and for every step to be traceable and
+		easily debugged. Example - if the input is not from PRINT, just modify the shell buffers used.
+		This chain should be used as a guide onto how process should communicate to each-other.
+
+		The shell uses these specific buffers
+			- shell.print - data being printed to display via PRINT
+			- shell.out   - data being used as output for shell
+			- shell.in    - data being used as input for shell
+
+	Edit
+		The edit utility is a vi-like interactive hex and ASCII text editor utility.
+		This utility will create the file memfs04:/edit.tmp - this is the file currently being edited. 
+		When the user is ready to submit changes, the data from this point is moved from this buffer to the 
+		file specified by :wl (location). 
+
+		Essentially, the editor works like this
+			- text held in the input buffer of edit (edit.input)
+				- at the newline printing, it is moved to the display buffer without removing data, causing 
+				  the text to be printed one line at a time.
+			- at the command :w, the data is copied from the display buffer to memfs04:/edit.tmp
+			- at the command :wl (location), the data from said temporary buffer is moved to the location specified.
+
+		This editor is designed to have vi-like syntax - CTRL+C to enter into.. uh. mode selector.. yea let's call it that.
+		Then : to move from mode selector to command mode
+
+		From command mode, you have
+			- i  - enter edit mode
+			- w  - write to buffer
+			- wl - write to location
+			- q  - exit program 
+
+		The workflow would generally go
+
+			
+			(Example - 'Hello' is currently in the input buffer)
+			(types 'World!')
+				ASCII 'World!' is moved to the input buffer
+				when the program detects a newline printer, it will write the new data to the
+				display buffer
+
+				This causes the display to go from
+
+					1. Hello
+
+				to
+					1. Hello
+					2. World!
+
+			The editor is designed to be very simple, intuitive, and vi-like.
