@@ -1177,43 +1177,5 @@ Examples
 		exitcase:
 			@call,exit,'*myfs'
 
-	Add two numbers from keyboard input and write result to display (assuming immediate valid input)
-	(a bit sloppy and poorly optimized but working i am not very good ok?)
-
-			@call,dial,'*kbdfs','*kbd','out'
-			cmp r12, 1
-			jne exitcase
-			xor rbx, rbx
-		check:
-			inc rbx
-			cmp [r8 + rbx], ' '
-			jne check
-			mov rcx, rbx
-		check2:
-			inc rcx
-			cmp [r8 + rcx], ' '
-			jne check2
-			@call,cuia,rbx
-		add:
-			add rdx, [r8 + rbx]
-			dec rbx
-			cmp rbx, 0
-			jne add
-		add2:
-			add rsi, [rbx + rcx]
-			dec rcx
-			cmp rcx, 0
-			jne add2
-			add rbx, rcx
-			@call,dial,'*dsplfs','*tty','in'
-			cmp r12, 1
-			jne exitcase
-			## check size here
-			mov [r8], r12
-			@call,signal,'*dsplfs','*tty','*myfs','*myid',6
-			@call,poll,'*dsplfs','*tty','*myfs','*myid',5
-		exitcase:
-			@call,exit,'*myfs'
-
 ( docs )                                                                         ( docs )
 
