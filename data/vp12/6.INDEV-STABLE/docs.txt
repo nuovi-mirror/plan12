@@ -3,6 +3,12 @@
 Vans Plan 12 Documentation
 Variation Version 6
 
+By vantheman
+Product of The Nuovi Orizzonti Company
+
+This item is licenced under The Nuovi Orizzonti Company Open License Version
+Three, viewable at http://thenuoviorizzonticompany.org/license/openlicense/3.txt
+
 
 Vans Plan 12
 	Vans Plan 12, also known as vp12, is the reference implementation for the Plan 12
@@ -213,17 +219,17 @@ Filesystems
 			Types - 
 				0000 0000 - unformatted/raw
 				0000 0000 - raw (disk image)
-				0000 0010 - machine code binary (AMD64 Tigerlake)
-				0000 0011 - vp12 format binary (AMD64 TigerLake)
-				0000 0100 - machine code binary (AMD64 IceLake)
-				0000 0101 - vp12 format binary (AMD64 IceLake)
-				0000 0110 - machine code binary (generic Xeon-class)
-				0000 0111 - vp12 format binary (generic Xeon-class)
-				0000 1000 - machine code binary (generic AMD64)
-				0000 1001 - vp12 format binary (generic AMD64)
+				0000 0010 - machine code binary
+				0000 0011 - vp12 format binary 
+				0000 0100 - reserve
+				0000 0101 - reserve
+				0000 0110 - reserve
+				0000 0111 - reserve
+				0000 1000 - reserve
+				0000 1001 - reserve
 				0000 1010 - ASCII data
-				0000 1011 - iASM assembler source (TigerLake)
-				0000 1100 - iASM assembler source (IceLake)
+				0000 1011 - Assembler source code file
+				0000 1100 - reserve
 				0000 1101 - vp12 macro expansion source
 				0000 1110 - generic logfile
 				0000 1111 - ISO image
