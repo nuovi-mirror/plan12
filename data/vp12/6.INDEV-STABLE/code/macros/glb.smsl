@@ -380,7 +380,7 @@
 	notfound:									; entry for creat/nocreat handling
 		mov r12, '%arg4'						; move creat/nocreat flag to a stable place
 		cmp r12, 'creat'						; check if nocreat set
-		je notfexit								; if set, goto exit, else, fall through
+		jne notfexit							; if not set, goto exit, else, fall through
 
 	creat:										; entry for if not found + creat case
 		add r15, 512							; incriment
