@@ -399,9 +399,13 @@
 		jmp handler								; re-parse
 
 	hardexit:									; entry for standard exiting
-		@call,parsefs,'fsys','rax','fsys','nocreat'		; parse the fsys file
-		mov r8, [r8 + 191]						; get my id
-		@call,exit,'r8'							; exit the program
+											; id like to do something like
+											; @call,parsefs,'fsys','rax','fsys','nocreat' - get the fsys file
+											; mov r8, [r8 + 191] - get my id
+											; @call,exit,'r8' ; exit the program
+											; but this is not a good idea, as you can see.
+											; so we just halt the CPU
+		hlt
 
 	notfexit:									; entry for exiting with nocreat
 		mov r12, 0								; set r12 since it does not exist
