@@ -985,10 +985,21 @@ POSIX
 						managing the file descriptors
 			read() -> simular to open()
 			write() -> simular to read()
-			exec() -> spawn a new process
-			fork() -> just exec() and hope it does not fall apart
-			pthreads() -> spawn a worker process on another memfs
-			malloc() -> not sure / ignored possibly (??) - maybe alloc a buff file
+			exec() -> spawn a process on the current fs, killing the current one and
+						handing control to the new process
+			fork() -> spawn a process on a different filesystem, handling return codes
+						either as a compiler shim or something integrated
+						into the resulting binary via signals
+			thredding -> simular to fork() - spawn another process on a different fs,
+						using signals for orchestration
+			malloc() -> have the compiler keep all valid memory ranges for the process,
+						returning one of then when needed instead of true
+						dynamic allocation
+
+		The main difficulty would be thredding and processes. There honestly is no proper
+		mapping between Plan 12 concepts and UNIX concepts in these areas. It can be
+		emulated or simulated via some form of runtime or an advanced compiler, but that
+		kinda defeats the purpose of C in itself.
 
 		The compiler would see these operations and match them to assembler output 
 		that can be assembled by the vp12 ASSEMBLE and macro system EXPAND based
@@ -1005,10 +1016,14 @@ POSIX
 		probably be made by making a simple C front-end based on a backend using the
 		macro language of VP12.
 
+		The point is, C on Plan 12 would be hard, while POSIX on Plan 12 would be much
+		harder. It would be easier to design an entire new language for a Plan 12 system
+		than attempt to adapt C onto it.
+
 The Standard Library
 	The Standard Libary (std.smsl) is a macro definitions file designed to make the life
 	of a developer targetting a VP12 system easier. It adds simple high-level operations
-	as macros instead of manual parsing/walking.
+	as macros instead of manual parsing/walking. Please use these.
 
 	Varbables
 		The file defines two variables per hardware device - *Nfs and *N. *Nfs being
