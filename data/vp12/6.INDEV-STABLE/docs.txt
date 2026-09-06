@@ -1,5 +1,3 @@
-( docs )                                                               											          ( docs )
-
 Vans Plan 12 Documentation
 Variation Version 6
 
@@ -840,17 +838,6 @@ Macros
 			default ID - (not required) default ID to set in the (if 
 					format=vp12vmfsf) FSYS file
 
-		mov (srctype) (src) (dstype) (dst)
-			This macro will parse the src and dst type as either an fs 
-			format name or 'mem' for a memory region and buffer the data
-			pointer as srcthrough AVX512 vector registers into the dst 
-			path.
-
-			srctype - type of source
-			src     - path of source
-			dstype  - type of dst
-			dst     - path of destination
-
 		parsefs ([sig|buff|state|proc|fsys]) (memfs) (name) ([creat|nocreat])
 			This macro is used to parse a file in a vp12vmfsf fs.	
 			This macro will return R8 as the pointer to the start of the file,
@@ -1049,9 +1036,9 @@ The Standard Library
 		create fs, procid, size, buffname
 
 			Create will create a buffer if it does not alerady exist. It should return r12
-			as 1 if created, r11 as the size of the buffer, and r8 as a pointer to the start of the
-			buffer data area. Note this maintains compatability with the return values of
-			Dial (even with r12, since it should be 1 unless something went wrong).
+			as 1 if created, r11 as the size of the buffer, and r8 as a pointer to the start
+			of the buffer data area. Note this maintains compatability with the return 
+			values of Dial (even with r12, since it should be 1 unless something went wrong).
 
 			fs should be the filesystem to create the buffer in, procid should be the ID of
 			the process owning the buffer, size should be the size of the buffer, and
@@ -1183,5 +1170,14 @@ Examples
 		exitcase:
 			@call,exit,'*myfs'
 
-( docs )                                                                         ( docs )
-
+	As you can tell, glb.smsl is not so much intended to be used by applications, but
+	is more of a backend to be used by other macro files or code that may genuinly need
+	fine-graned control over access patterns. Besides this, however, there is no real
+	benifit to using glb.smsl macros over std.smsl macros. Most applications, including
+	those providing core services, are encouraged to use std.smsl instead of glb.smsl.
+	The main reason for this is because std.smsl adds a lot of saftey checks to prevent
+	a good few bugs. Now, using std.smsl is not a catch-all magical flag that makes your
+	program bug-free or secure, but simply makes it easier to prevent bugs and reason
+	about at a high level, as well as the fast that writting code against glb.smsl is
+	very tiresome compared to std.smsl, and well, that is kind of the entire point -
+	to make development easier.
