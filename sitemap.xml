@@ -1,11 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-    <url>
-        <loc>http://plan12os.org/</loc>
-    </url>
-    <url>
-        <loc>http://plan12os.org/status.html</loc>
-    </url>
-    <url>
-        <loc>http://plan12os.org/contact.html</loc>
-    </url>
+
+	<!-- thenuoviorizzonticompany.org -->
+	<url><loc>http://thenuoviorizzonticompany.org</loc></url>
+	<url><loc>http://plan12os.org</loc></url>
+	<url><loc>http://pebblevm.org</loc></url>
+	<url><loc>https://codeberg.org/vantheman/</loc></url>
+	<url><loc>https://codeberg.org/vantheman/pebble/</loc></url>
+	<url><loc>https://codeberg.org/vantheman/plan12</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/pebble/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/plan12</loc></url>
+
+	<!-- pebblevm.org -->
+	<url><loc>http://thenuoviorizzonticompany.org</loc></url>
+	<url><loc>http://pebblevm.org/</loc></url>
+	<url><loc>http://pebblevm.org/git/</loc></url>
+	<url><loc>http://pebblevm.org/download.html</loc></url>
+	<url><loc>http://pebblevm.org/platform.html</loc></url>
+	<url><loc>http://pebblevm.org/mirrors.html</loc></url>
+	<url><loc>https://codeberg.org/vantheman/</loc></url>
+	<url><loc>https://codeberg.org/vantheman/pebble/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/pebble/</loc></url>
+
+	<!-- plan12os.org -->
+	<url><loc>http://thenuoviorizzonticompany.org</loc></url>
+	<url><loc>http://plan12os.org/</loc></url>
+	<url><loc>http://plan12os.org/data/</loc></url>
+	<url><loc>http://plan12os.org/contact.html</loc></url>
+	<url><loc>http://plan12os.org/data/license.txt</loc></url>
+	<url><loc>http://plan12os.org/status.html</loc></url>
+	<url><loc>https://codeberg.org/vantheman/</loc></url>
+	<url><loc>https://codeberg.org/vantheman/plan12/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/plan12/</loc></url>
+
+	<!-- sparkosphere.com -->
+	<url><loc>http://thenuoviorizzonticompany.org</loc></url>
+	<url><loc>http://sparkosphere.com/</loc></url>
+	<url><loc>http://sparkosphere.com/contact.html</loc></url>
+	<url><loc>https://codeberg.org/vantheman/</loc></url>
+	<url><loc>https://github.com/nuovi-mirror/</loc></url>
+
 </urlset>
+
