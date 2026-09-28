@@ -442,6 +442,8 @@
 	init:											; shared init
 												;
 		mov r10, '%arg1'								; move the id into a stable place
+		@call,sub,'r10'									; format it
+		mov r10, r9									; replace
 		@call,paresefs,fsys,rax,r10'.f',nocreat	; get the fsys file			;
 		mov rbx, r8									; get the fsys entry into a stable place
 		@call,parsefs,proc,r10,rbx'.p',nocreat	; find the process file			;
